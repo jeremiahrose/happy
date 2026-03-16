@@ -6,8 +6,7 @@ export interface AppConfig {
     revenueCatAppleKey?: string;
     revenueCatGoogleKey?: string;
     revenueCatStripeKey?: string;
-    elevenLabsAgentIdDev?: string;
-    elevenLabsAgentIdProd?: string;
+    openaiApiKey?: string;
     serverUrl?: string;
 }
 
@@ -84,13 +83,9 @@ export function loadAppConfig(): AppConfig {
         console.log('[loadAppConfig] Override postHogKey from EXPO_PUBLIC_POSTHOG_KEY');
         config.postHogKey = process.env.EXPO_PUBLIC_POSTHOG_KEY;
     }
-    if (process.env.EXPO_PUBLIC_ELEVENLABS_AGENT_ID_DEV && config.elevenLabsAgentIdDev !== process.env.EXPO_PUBLIC_ELEVENLABS_AGENT_ID_DEV) {
-        console.log('[loadAppConfig] Override elevenLabsAgentIdDev from EXPO_PUBLIC_ELEVENLABS_AGENT_ID_DEV');
-        config.elevenLabsAgentIdDev = process.env.EXPO_PUBLIC_ELEVENLABS_AGENT_ID_DEV;
-    }
-    if (process.env.EXPO_PUBLIC_ELEVENLABS_AGENT_ID_PROD && config.elevenLabsAgentIdProd !== process.env.EXPO_PUBLIC_ELEVENLABS_AGENT_ID_PROD) {
-        console.log('[loadAppConfig] Override elevenLabsAgentIdProd from EXPO_PUBLIC_ELEVENLABS_AGENT_ID_PROD');
-        config.elevenLabsAgentIdProd = process.env.EXPO_PUBLIC_ELEVENLABS_AGENT_ID_PROD;
+    if (process.env.EXPO_PUBLIC_OPENAI_API_KEY && config.openaiApiKey !== process.env.EXPO_PUBLIC_OPENAI_API_KEY) {
+        console.log('[loadAppConfig] Override openaiApiKey from EXPO_PUBLIC_OPENAI_API_KEY');
+        config.openaiApiKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
     }
     if (process.env.EXPO_PUBLIC_SERVER_URL && config.serverUrl !== process.env.EXPO_PUBLIC_SERVER_URL) {
         console.log('[loadAppConfig] Override serverUrl from EXPO_PUBLIC_SERVER_URL');

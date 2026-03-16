@@ -966,33 +966,6 @@
   resolved "https://registry.yarnpkg.com/@electric-sql/pglite/-/pglite-0.3.15.tgz#073409dc9a6b0c2af2626d02af8c226293c6b059"
   integrity sha512-Cj++n1Mekf9ETfdc16TlDi+cDDQF0W7EcbyRHYOAeZdsAe8M/FJg18itDTSwyHfar2WIezawM9o0EKaRGVKygQ==
 
-"@elevenlabs/client@0.12.2":
-  version "0.12.2"
-  resolved "https://registry.yarnpkg.com/@elevenlabs/client/-/client-0.12.2.tgz#0a19057eb71c378cd115b2d3e8f292c5636c84a2"
-  integrity sha512-QWllhDndFfKmftlktNoa35+AF3gOCbSHowYhR42ZHb5u32lFbMPbh2BALCrpFa3edqCHSXtzG6zzLSAGjkhvHQ==
-  dependencies:
-    "@elevenlabs/types" "0.4.0"
-    livekit-client "^2.11.4"
-
-"@elevenlabs/react-native@^0.5.7":
-  version "0.5.8"
-  resolved "https://registry.yarnpkg.com/@elevenlabs/react-native/-/react-native-0.5.8.tgz#4df65c7d5910be2f6f77ff3953acaeac13cb3b8b"
-  integrity sha512-nrumWFAgu8rQIwt19mSTFSbz3VnxFDRCm2jjtY1p+Cn1i+ldXGpqJov2LQf/JAgBd1gtquuurv0dgDDwlLgHhg==
-  dependencies:
-    "@elevenlabs/types" "0.4.0"
-
-"@elevenlabs/react@^0.12.3":
-  version "0.12.3"
-  resolved "https://registry.yarnpkg.com/@elevenlabs/react/-/react-0.12.3.tgz#131d342f98caffff861badce90ad826e3366a782"
-  integrity sha512-fQJlabwuvQziBCCNcxlXZt5GVxcPHjwb46NtSEbLJY0zaOUtWJynRX4kPfbz7ChqnMe7FAHYnrq2XsaSzpQXLQ==
-  dependencies:
-    "@elevenlabs/client" "0.12.2"
-
-"@elevenlabs/types@0.4.0":
-  version "0.4.0"
-  resolved "https://registry.yarnpkg.com/@elevenlabs/types/-/types-0.4.0.tgz#f5a45ef2b8ed5a304eef9f28ba0da0af8ccdd7c2"
-  integrity sha512-6CQb4r9DjepILhLybDxW0h8rvbsR8jPAp74HvFGYuvYdXcQRTkYTD9BQ4PV6VcuC1iqx0UljzJj8js3ADQ8EXw==
-
 "@emnapi/runtime@^1.7.0":
   version "1.8.1"
   resolved "https://registry.yarnpkg.com/@emnapi/runtime/-/runtime-1.8.1.tgz#550fa7e3c0d49c5fb175a116e8cd70614f9a22a5"
@@ -9759,7 +9732,7 @@ lines-and-columns@^1.1.6:
   resolved "https://registry.yarnpkg.com/lines-and-columns/-/lines-and-columns-1.2.4.tgz#eca284f75d2965079309dc0ad9255abb2ebc1632"
   integrity sha512-7ylylesZQ/PV29jhEDl3Ufjo6ZX7gCqJr5F7PKrqc93v7fzSymt1BpwEU8nAUXs8qzzvqhbjhK5QZg6Mt/HkBg==
 
-livekit-client@^2.11.4, livekit-client@^2.15.4:
+livekit-client@^2.15.4:
   version "2.17.0"
   resolved "https://registry.yarnpkg.com/livekit-client/-/livekit-client-2.17.0.tgz#ece2d782580f36c62debe6d919288e2fee9cdad1"
   integrity sha512-BD1QUS44ancVTBdnAher0aO7DV5holFYH2lYradYT/HgXtn6R8xPyvtDAH3UH40jGcesDo9fEopCFwEdOgrIhg==
