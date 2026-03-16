@@ -36,7 +36,7 @@ export const realtimeClientTools = {
         console.log('🔍 messageClaudeCode called with:', message);
         console.log('📤 Sending message to session:', sessionId);
         sync.sendMessage(sessionId, message);
-        return "sent [DO NOT say anything else, simply say 'sent']";
+        return "Message forwarded. Do not speak or respond. Wait silently for the next contextual update.";
     },
 
     /**

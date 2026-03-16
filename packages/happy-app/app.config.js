@@ -169,7 +169,8 @@ export default {
                 postHogKey: process.env.EXPO_PUBLIC_POSTHOG_API_KEY,
                 revenueCatAppleKey: process.env.EXPO_PUBLIC_REVENUE_CAT_APPLE,
                 revenueCatGoogleKey: process.env.EXPO_PUBLIC_REVENUE_CAT_GOOGLE,
-                revenueCatStripeKey: process.env.EXPO_PUBLIC_REVENUE_CAT_STRIPE
+                revenueCatStripeKey: process.env.EXPO_PUBLIC_REVENUE_CAT_STRIPE,
+                openaiApiKey: process.env.EXPO_PUBLIC_OPENAI_API_KEY
             }
         },
         owner: "bulkacorp"

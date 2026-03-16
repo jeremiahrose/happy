@@ -115,9 +115,9 @@ export const voiceHooks = {
      */
     onMessages(sessionId: string, messages: Message[]) {
         if (VOICE_CONFIG.DISABLE_MESSAGES) return;
-        
+
         reportSession(sessionId);
-        reportContextualUpdate(formatNewMessages(sessionId, messages));
+        reportTextUpdate(formatNewMessages(sessionId, messages));
     },
 
     /**
