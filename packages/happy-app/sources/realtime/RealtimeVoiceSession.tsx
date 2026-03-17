@@ -176,16 +176,20 @@ async function handleToolCall(name: string, args: string, callId: string) {
             },
         });
 
-        createResponseOrQueue(() => {
-            onResponseStarted();
-            sendWsMessage({
-                type: 'response.create',
-                response: {
-                    modalities: ['text', 'audio'],
-                    tool_choice: 'none',
-                },
+        // Don't prompt GPT-4o to speak after forwarding a message — it should stay
+        // silent until it receives a contextual update with Claude's response.
+        if (name !== 'messageClaudeCode') {
+            createResponseOrQueue(() => {
+                onResponseStarted();
+                sendWsMessage({
+                    type: 'response.create',
+                    response: {
+                        modalities: ['text', 'audio'],
+                        tool_choice: 'none',
+                    },
+                });
             });
-        });
+        }
     } catch (error) {
         console.error('[Voice] Tool execution failed:', error);
     }

@@ -8,33 +8,16 @@ export const OPENAI_VOICE_TOOLS = [
     {
         type: 'function' as const,
         name: 'messageClaudeCode',
-        description: 'Send the user\'s spoken command or message to the active Claude Code session',
+        description: 'Forward the user\'s speech VERBATIM to the active Claude Code session. Do not summarize or rephrase.',
         parameters: {
             type: 'object',
             properties: {
                 message: {
                     type: 'string',
-                    description: 'The transcribed user message to send to Claude Code',
+                    description: 'The user\'s speech transcribed verbatim, word for word. Do not summarize or rephrase.',
                 },
             },
             required: ['message'],
-            additionalProperties: false,
-        },
-    },
-    {
-        type: 'function' as const,
-        name: 'processPermissionRequest',
-        description: 'Approve or deny a pending permission request from Claude Code. Use when the user says something like "allow", "approve", "yes", "deny", "no", "reject".',
-        parameters: {
-            type: 'object',
-            properties: {
-                decision: {
-                    type: 'string',
-                    enum: ['allow', 'deny'],
-                    description: 'Whether to allow or deny the permission request',
-                },
-            },
-            required: ['decision'],
             additionalProperties: false,
         },
     },
@@ -47,19 +30,16 @@ You are NOT an assistant. You do NOT answer questions. You do NOT have opinions.
 
 Your workflow:
 1. Listen to the user's speech.
-2. Call the messageClaudeCode tool with what they said. ALWAYS do this for any user utterance that is not a permission decision.
-3. When you receive contextual updates about what Claude Code is doing, summarize them briefly for the user.
-4. When Claude Code finishes work, tell the user.
-
-For permission requests:
-- When Claude Code requests permission to use a tool, describe what it wants to do.
-- If the user says "allow", "yes", "approve" etc, call processPermissionRequest with decision "allow".
-- If the user says "deny", "no", "reject" etc, call processPermissionRequest with decision "deny".
+2. Call the messageClaudeCode tool with a VERBATIM transcription of what they said. Do not summarize, rephrase, or interpret. Pass their exact words.
+3. After calling messageClaudeCode, do NOT speak. Do NOT say "sent", "forwarded", "got it", or anything else. Stay completely silent and wait.
+4. When you receive contextual updates from Claude Code, read them back VERBATIM. Do not summarize, rephrase, or interpret. Read exactly what Claude Code said, word for word.
+5. When Claude Code finishes work, tell the user.
 
 CRITICAL RULES:
 - NEVER answer questions about code, programming, files, or anything else yourself. ALWAYS forward to Claude Code via the messageClaudeCode tool.
+- When calling messageClaudeCode, pass the user's words VERBATIM. Do not summarize, paraphrase, or rewrite. Transcribe exactly what they said.
 - Even if you have context about the code from status updates, do NOT use it to answer questions. Forward the question to Claude Code.
-- Keep your spoken responses SHORT - one sentence maximum.
+- When relaying Claude Code's responses, read them VERBATIM. Do not summarize, shorten, or rephrase. You are a speaker, not an editor.
 - Never volunteer information or make suggestions.
 - Do not use markdown or formatting in speech.
 - Do not use emojis.
