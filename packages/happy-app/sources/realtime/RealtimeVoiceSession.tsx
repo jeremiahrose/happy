@@ -5,32 +5,78 @@ import { realtimeClientTools } from './realtimeClientTools';
 import {
     OPENAI_VOICE,
     OPENAI_MODEL,
+    OPENAI_AUDIO_FORMAT,
+    OPENAI_SAMPLE_RATE,
     OPENAI_VOICE_TOOLS,
     getVoiceSystemPrompt,
 } from './openaiVoiceConfig';
 import type { VoiceSession, VoiceSessionConfig } from './types';
 import {
-    RTCPeerConnection,
-    mediaDevices,
-    MediaStream as RNMediaStream,
-    RTCSessionDescription,
-} from '@livekit/react-native-webrtc';
+    AudioContext as RNAudioContext,
+    AudioRecorder,
+    AudioBuffer as RNAudioBuffer,
+    AudioManager,
+} from 'react-native-audio-api';
 
 /**
  * OpenAI Realtime API voice session for React Native.
- * Uses WebRTC transport so audio I/O is handled natively by the platform -
- * no manual PCM encoding/decoding needed.
+ * Uses WebSocket + react-native-audio-api for mic capture and playback,
+ * matching the web implementation's approach for better device compatibility.
  */
 
-let peerConnection: RTCPeerConnection | null = null;
-let dataChannel: any = null;
-let localStream: RNMediaStream | null = null;
+let ws: WebSocket | null = null;
+let playbackContext: RNAudioContext | null = null;
+let nextPlayTime = 0;
+let recorder: AudioRecorder | null = null;
 let isResponseActive = false;
 let pendingResponseAction: (() => void) | null = null;
 
-function sendDataChannelMessage(data: Record<string, unknown>) {
-    if (dataChannel && dataChannel.readyState === 'open') {
-        dataChannel.send(JSON.stringify(data));
+function float32ToBase64Pcm16(float32: Float32Array): string {
+    const pcm16 = new Int16Array(float32.length);
+    for (let i = 0; i < float32.length; i++) {
+        const s = Math.max(-1, Math.min(1, float32[i]));
+        pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    }
+
+    const bytes = new Uint8Array(pcm16.buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+}
+
+function playPcm16Base64(base64: string) {
+    if (!playbackContext) return;
+
+    const binaryString = atob(base64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+    }
+
+    const int16 = new Int16Array(bytes.buffer);
+    const float32 = new Float32Array(int16.length);
+    for (let i = 0; i < int16.length; i++) {
+        float32[i] = int16[i] / 32768;
+    }
+
+    const buffer = playbackContext.createBuffer(1, float32.length, OPENAI_SAMPLE_RATE);
+    buffer.getChannelData(0).set(float32);
+
+    const source = playbackContext.createBufferSource();
+    source.buffer = buffer;
+    source.connect(playbackContext.destination);
+
+    const now = playbackContext.currentTime;
+    const startTime = Math.max(now, nextPlayTime);
+    source.start(startTime);
+    nextPlayTime = startTime + buffer.duration;
+}
+
+function sendWsMessage(data: Record<string, unknown>) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(data));
     }
 }
 
@@ -59,6 +105,32 @@ function onResponseDone() {
     }
 }
 
+function startRecording() {
+    try {
+        recorder = new AudioRecorder({
+            sampleRate: OPENAI_SAMPLE_RATE,
+            bufferLengthInSamples: 2400,
+        });
+
+        recorder.onAudioReady((event: { buffer: RNAudioBuffer; numFrames: number; when: number }) => {
+            const channelData = event.buffer.getChannelData(0);
+            const base64 = float32ToBase64Pcm16(channelData);
+            sendWsMessage({ type: 'input_audio_buffer.append', audio: base64 });
+        });
+
+        recorder.start();
+    } catch (error) {
+        console.error('[Voice] Failed to start recording:', error);
+    }
+}
+
+function stopRecording() {
+    if (recorder) {
+        recorder.stop();
+        recorder = null;
+    }
+}
+
 async function handleToolCall(name: string, args: string, callId: string) {
     const toolFn = realtimeClientTools[name as keyof typeof realtimeClientTools];
     if (!toolFn) {
@@ -70,7 +142,7 @@ async function handleToolCall(name: string, args: string, callId: string) {
         const parsedArgs = JSON.parse(args || '{}');
         const result = await toolFn(parsedArgs);
 
-        sendDataChannelMessage({
+        sendWsMessage({
             type: 'conversation.item.create',
             item: {
                 type: 'function_call_output',
@@ -81,7 +153,7 @@ async function handleToolCall(name: string, args: string, callId: string) {
 
         createResponseOrQueue(() => {
             onResponseStarted();
-            sendDataChannelMessage({
+            sendWsMessage({
                 type: 'response.create',
                 response: {
                     modalities: ['text', 'audio'],
@@ -97,7 +169,7 @@ async function handleToolCall(name: string, args: string, callId: string) {
 class RealtimeVoiceSessionImpl implements VoiceSession {
 
     async startSession(config: VoiceSessionConfig): Promise<void> {
-        if (peerConnection) {
+        if (ws) {
             console.warn('[Voice] Session already active');
             return;
         }
@@ -105,168 +177,159 @@ class RealtimeVoiceSessionImpl implements VoiceSession {
         try {
             storage.getState().setRealtimeStatus('connecting');
 
-            // Step 1: Get ephemeral token from OpenAI
-            const tokenResponse = await fetch('https://api.openai.com/v1/realtime/sessions', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${config.apiKey}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    model: OPENAI_MODEL,
-                    voice: OPENAI_VOICE,
-                    modalities: ['text', 'audio'],
-                    instructions: config.initialContext
-                        ? getVoiceSystemPrompt() + '\n\nCurrent session context:\n' + config.initialContext
-                        : getVoiceSystemPrompt(),
-                    tools: OPENAI_VOICE_TOOLS,
-                    input_audio_format: 'pcm16',
-                    output_audio_format: 'pcm16',
-                    turn_detection: {
-                        type: 'server_vad',
-                        threshold: 0.5,
-                        prefix_padding_ms: 300,
-                        silence_duration_ms: 500,
-                    },
-                }),
-            });
-
-            if (!tokenResponse.ok) {
-                throw new Error(`Failed to get ephemeral token: ${tokenResponse.status}`);
+            // Request microphone permission
+            const permStatus = await AudioManager.requestRecordingPermissions();
+            if (permStatus !== 'Granted') {
+                console.error('[Voice] Microphone permission denied:', permStatus);
+                storage.getState().setRealtimeStatus('error');
+                return;
             }
 
-            const tokenData = await tokenResponse.json();
-            const ephemeralKey = tokenData.client_secret?.value;
-            if (!ephemeralKey) {
-                throw new Error('No ephemeral key in response');
-            }
+            playbackContext = new RNAudioContext({ sampleRate: OPENAI_SAMPLE_RATE });
+            nextPlayTime = 0;
 
-            // Step 2: Create RTCPeerConnection
-            const pc = new RTCPeerConnection({});
-            peerConnection = pc;
+            const url = `wss://api.openai.com/v1/realtime?model=${OPENAI_MODEL}`;
+            ws = new WebSocket(url, [
+                'realtime',
+                `openai-insecure-api-key.${config.apiKey}`,
+                'openai-beta.realtime-v1',
+            ]);
 
-            // Step 3: Set up audio - get mic stream and add track
-            const stream = await mediaDevices.getUserMedia({ audio: true }) as RNMediaStream;
-            localStream = stream;
-            for (const track of stream.getTracks()) {
-                pc.addTrack(track, stream);
-            }
+            await new Promise<void>((resolve, reject) => {
+                if (!ws) return reject(new Error('WebSocket not created'));
 
-            // Step 4: Handle remote audio track (playback is automatic via WebRTC)
-            (pc as any).addEventListener('track', () => {
-                console.log('[Voice] Remote audio track received');
-                // WebRTC handles playback automatically on native
-            });
-
-            // Step 5: Create data channel for events
-            dataChannel = pc.createDataChannel('oai-events');
-
-            dataChannel.onopen = () => {
-                console.log('[Voice] Data channel open');
-                storage.getState().setRealtimeStatus('connected');
-                storage.getState().setRealtimeMode('idle');
-            };
-
-            dataChannel.onmessage = (event: any) => {
-                try {
+                const onMessage = (event: MessageEvent) => {
                     const data = JSON.parse(event.data);
 
-                    if (data.type === 'response.created') {
-                        onResponseStarted();
+                    if (data.type === 'session.created') {
+                        let instructions = getVoiceSystemPrompt();
+                        if (config.initialContext) {
+                            instructions += '\n\nCurrent session context:\n' + config.initialContext;
+                        }
+
+                        sendWsMessage({
+                            type: 'session.update',
+                            session: {
+                                voice: OPENAI_VOICE,
+                                modalities: ['text', 'audio'],
+                                input_audio_format: OPENAI_AUDIO_FORMAT,
+                                output_audio_format: OPENAI_AUDIO_FORMAT,
+                                turn_detection: {
+                                    type: 'server_vad',
+                                    threshold: 0.5,
+                                    prefix_padding_ms: 300,
+                                    silence_duration_ms: 500,
+                                },
+                                tools: OPENAI_VOICE_TOOLS,
+                                instructions,
+                                speed: 1.3,
+                            },
+                        });
                     }
 
-                    if (data.type === 'response.done') {
-                        if (data.response?.output) {
-                            for (const item of data.response.output) {
-                                if (item.type === 'function_call' && item.call_id) {
-                                    handleToolCall(item.name, item.arguments, item.call_id);
+                    if (data.type === 'session.updated') {
+                        console.log('[Voice] Session configured');
+                        resolve();
+                        startRecording();
+                        storage.getState().setRealtimeStatus('connected');
+                        storage.getState().setRealtimeMode('idle');
+                    }
+                };
+
+                ws.onmessage = onMessage;
+                ws.onerror = (error) => {
+                    console.error('[Voice] WebSocket error:', error);
+                    reject(error);
+                };
+                ws.onclose = () => {
+                    console.log('[Voice] WebSocket closed');
+                    stopRecording();
+                    isResponseActive = false;
+                    pendingResponseAction = null;
+                    storage.getState().setRealtimeStatus('disconnected');
+                    storage.getState().setRealtimeMode('idle', true);
+                    storage.getState().clearRealtimeModeDebounce();
+                    ws = null;
+                };
+
+                // Replace onmessage after setup to handle ongoing events
+                const setupDone = () => {
+                    if (!ws) return;
+                    ws.onmessage = (event: MessageEvent) => {
+                        onMessage(event);
+                        const data = JSON.parse(event.data);
+
+                        if (data.type === 'response.audio.delta' && data.delta) {
+                            playPcm16Base64(data.delta);
+                        }
+
+                        if (data.type === 'response.created') {
+                            onResponseStarted();
+                        }
+
+                        if (data.type === 'response.done') {
+                            if (data.response?.output) {
+                                for (const item of data.response.output) {
+                                    if (item.type === 'function_call' && item.call_id) {
+                                        handleToolCall(item.name, item.arguments, item.call_id);
+                                    }
                                 }
                             }
+                            storage.getState().setRealtimeMode('idle');
+                            onResponseDone();
                         }
-                        storage.getState().setRealtimeMode('idle');
-                        onResponseDone();
-                    }
 
-                    if (data.type === 'response.audio_transcript.delta') {
-                        storage.getState().setRealtimeMode('speaking');
-                    }
+                        if (data.type === 'response.audio_transcript.delta') {
+                            storage.getState().setRealtimeMode('speaking');
+                        }
 
-                    if (data.type === 'error') {
-                        console.error('[Voice] API error:', data.error);
-                    }
-                } catch (e) {
-                    console.error('[Voice] Failed to parse data channel message:', e);
-                }
-            };
+                        if (data.type === 'input_audio_buffer.speech_started') {
+                            // User started speaking - could cancel current playback
+                        }
 
-            dataChannel.onclose = () => {
-                console.log('[Voice] Data channel closed');
-            };
+                        if (data.type === 'error') {
+                            console.error('[Voice] API error:', data.error);
+                        }
+                    };
+                };
 
-            // Step 6: Create and set local SDP offer
-            const offer = await pc.createOffer({});
-            await pc.setLocalDescription(offer);
-
-            // Step 7: Send offer to OpenAI and get answer
-            const sdpResponse = await fetch(`https://api.openai.com/v1/realtime?model=${OPENAI_MODEL}`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${ephemeralKey}`,
-                    'Content-Type': 'application/sdp',
-                },
-                body: pc.localDescription?.sdp,
-            });
-
-            if (!sdpResponse.ok) {
-                throw new Error(`SDP exchange failed: ${sdpResponse.status}`);
-            }
-
-            const answerSdp = await sdpResponse.text();
-            await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: answerSdp }));
-
-            console.log('[Voice] WebRTC session established');
-
-            // Handle connection state changes
-            (pc as any).addEventListener('connectionstatechange', () => {
-                console.log('[Voice] Connection state:', pc.connectionState);
-                if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-                    this.cleanup();
-                }
+                // Set up full message handler after connection is established
+                const origResolve = resolve;
+                resolve = () => {
+                    origResolve();
+                    setupDone();
+                };
             });
         } catch (error) {
             console.error('[Voice] Failed to start session:', error);
             storage.getState().setRealtimeStatus('error');
-            this.cleanup();
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
         }
     }
 
-    private cleanup() {
-        if (localStream) {
-            localStream.getTracks().forEach(t => t.stop());
-            localStream = null;
+    async endSession(): Promise<void> {
+        stopRecording();
+        if (ws) {
+            ws.close();
+            ws = null;
         }
-        if (dataChannel) {
-            dataChannel.close();
-            dataChannel = null;
-        }
-        if (peerConnection) {
-            peerConnection.close();
-            peerConnection = null;
+        if (playbackContext) {
+            playbackContext.close();
+            playbackContext = null;
         }
         isResponseActive = false;
         pendingResponseAction = null;
         storage.getState().setRealtimeStatus('disconnected');
-        storage.getState().setRealtimeMode('idle', true);
-        storage.getState().clearRealtimeModeDebounce();
-    }
-
-    async endSession(): Promise<void> {
-        this.cleanup();
     }
 
     sendTextMessage(message: string): void {
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
         createResponseOrQueue(() => {
-            sendDataChannelMessage({
+            sendWsMessage({
                 type: 'conversation.item.create',
                 item: {
                     type: 'message',
@@ -275,12 +338,15 @@ class RealtimeVoiceSessionImpl implements VoiceSession {
                 },
             });
             onResponseStarted();
-            sendDataChannelMessage({ type: 'response.create' });
+            sendWsMessage({ type: 'response.create' });
         });
     }
 
     sendContextualUpdate(update: string): void {
-        sendDataChannelMessage({
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+        // Inject context as a system-level conversation item
+        sendWsMessage({
             type: 'conversation.item.create',
             item: {
                 type: 'message',
