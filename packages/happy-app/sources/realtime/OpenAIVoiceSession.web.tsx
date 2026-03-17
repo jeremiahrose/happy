@@ -1,8 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { registerVoiceSession } from './RealtimeSession';
 import { storage } from '@/sync/storage';
-import { Modal } from '@/modal';
-import { t } from '@/text';
 import { realtimeClientTools } from './realtimeClientTools';
 import {
     OPENAI_VOICE,
@@ -13,39 +11,20 @@ import {
     getVoiceSystemPrompt,
 } from './openaiVoiceConfig';
 import type { VoiceSession, VoiceSessionConfig } from './types';
-import {
-    AudioContext as RNAudioContext,
-    AudioRecorder,
-    AudioBuffer as RNAudioBuffer,
-    AudioManager,
-} from 'react-native-audio-api';
 
 /**
- * OpenAI Realtime API voice session for React Native.
- * Uses WebSocket + react-native-audio-api for mic capture and playback.
+ * OpenAI Realtime API voice session for web.
+ * Uses WebSocket for the Realtime API and Web Audio API for mic capture + playback.
  */
 
 let ws: WebSocket | null = null;
-let playbackContext: RNAudioContext | null = null;
+let playbackContext: AudioContext | null = null;
 let nextPlayTime = 0;
-let recorder: AudioRecorder | null = null;
+let mediaStream: MediaStream | null = null;
+let workletNode: AudioWorkletNode | null = null;
+let recordingContext: AudioContext | null = null;
 let isResponseActive = false;
 let pendingResponseAction: (() => void) | null = null;
-
-function float32ToBase64Pcm16(float32: Float32Array): string {
-    const pcm16 = new Int16Array(float32.length);
-    for (let i = 0; i < float32.length; i++) {
-        const s = Math.max(-1, Math.min(1, float32[i]));
-        pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-    }
-
-    const bytes = new Uint8Array(pcm16.buffer);
-    let binary = '';
-    for (let i = 0; i < bytes.length; i++) {
-        binary += String.fromCharCode(bytes[i]);
-    }
-    return btoa(binary);
-}
 
 function playPcm16Base64(base64: string) {
     if (!playbackContext) return;
@@ -73,21 +52,6 @@ function playPcm16Base64(base64: string) {
     const startTime = Math.max(now, nextPlayTime);
     source.start(startTime);
     nextPlayTime = startTime + buffer.duration;
-}
-
-function humanizeOpenAIError(error: { type?: string; code?: string; message?: string }): string {
-    const code = error?.code ?? '';
-    const type = error?.type ?? '';
-    if (code === 'insufficient_quota' || code === 'billing_hard_limit_reached' || type === 'insufficient_quota') {
-        return 'Your OpenAI account has run out of credits. Please add funds at platform.openai.com.';
-    }
-    if (code === 'rate_limit_exceeded') {
-        return 'OpenAI rate limit reached. Please wait a moment and try again.';
-    }
-    if (code === 'invalid_api_key') {
-        return 'Your OpenAI API key is invalid. Please check your settings.';
-    }
-    return error?.message ?? 'An unexpected error occurred with the voice service.';
 }
 
 function sendWsMessage(data: Record<string, unknown>) {
@@ -121,37 +85,66 @@ function onResponseDone() {
     }
 }
 
-let audioChunkCount = 0;
-
-function startRecording() {
+async function startRecording() {
     try {
-        audioChunkCount = 0;
-        recorder = new AudioRecorder({
-            sampleRate: OPENAI_SAMPLE_RATE,
-            bufferLengthInSamples: 2400,
-        });
+        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        recordingContext = new AudioContext({ sampleRate: OPENAI_SAMPLE_RATE });
+        const source = recordingContext.createMediaStreamSource(mediaStream);
 
-        recorder.onAudioReady((event: { buffer: RNAudioBuffer; numFrames: number; when: number }) => {
-            audioChunkCount++;
-            if (audioChunkCount <= 3 || audioChunkCount % 100 === 0) {
-                console.log(`[Voice] Audio chunk #${audioChunkCount} - frames: ${event.numFrames}, channels: ${event.buffer.numberOfChannels}`);
+        const workletCode = `
+            class PCMProcessor extends AudioWorkletProcessor {
+                process(inputs) {
+                    const input = inputs[0];
+                    if (input.length > 0) {
+                        const channelData = input[0];
+                        const pcm16 = new Int16Array(channelData.length);
+                        for (let i = 0; i < channelData.length; i++) {
+                            const s = Math.max(-1, Math.min(1, channelData[i]));
+                            pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                        }
+                        this.port.postMessage({ pcm16 });
+                    }
+                    return true;
+                }
             }
-            const channelData = event.buffer.getChannelData(0);
-            const base64 = float32ToBase64Pcm16(channelData);
-            sendWsMessage({ type: 'input_audio_buffer.append', audio: base64 });
-        });
+            registerProcessor('pcm-processor', PCMProcessor);
+        `;
+        const blob = new Blob([workletCode], { type: 'application/javascript' });
+        const url = URL.createObjectURL(blob);
+        await recordingContext.audioWorklet.addModule(url);
+        URL.revokeObjectURL(url);
 
-        recorder.start();
-        console.log('[Voice] AudioRecorder started');
+        workletNode = new AudioWorkletNode(recordingContext, 'pcm-processor');
+        workletNode.port.onmessage = (event) => {
+            if (event.data.pcm16) {
+                const bytes = new Uint8Array(event.data.pcm16.buffer);
+                let binary = '';
+                for (let i = 0; i < bytes.length; i++) {
+                    binary += String.fromCharCode(bytes[i]);
+                }
+                const base64 = btoa(binary);
+                sendWsMessage({ type: 'input_audio_buffer.append', audio: base64 });
+            }
+        };
+
+        source.connect(workletNode);
     } catch (error) {
         console.error('[Voice] Failed to start recording:', error);
     }
 }
 
 function stopRecording() {
-    if (recorder) {
-        recorder.stop();
-        recorder = null;
+    if (workletNode) {
+        workletNode.disconnect();
+        workletNode = null;
+    }
+    if (recordingContext) {
+        recordingContext.close();
+        recordingContext = null;
+    }
+    if (mediaStream) {
+        mediaStream.getTracks().forEach(t => t.stop());
+        mediaStream = null;
     }
 }
 
@@ -206,58 +199,21 @@ class RealtimeVoiceSessionImpl implements VoiceSession {
             storage.getState().setRealtimeStatus('connecting');
 
             // Request microphone permission
-            const permStatus = await AudioManager.requestRecordingPermissions();
-            if (permStatus !== 'Granted') {
-                console.error('[Voice] Microphone permission denied:', permStatus);
+            try {
+                await navigator.mediaDevices.getUserMedia({ audio: true });
+            } catch (error) {
+                console.error('[Voice] Microphone permission denied:', error);
                 storage.getState().setRealtimeStatus('error');
                 return;
             }
 
-            playbackContext = new RNAudioContext({ sampleRate: OPENAI_SAMPLE_RATE });
+            playbackContext = new AudioContext({ sampleRate: OPENAI_SAMPLE_RATE });
             nextPlayTime = 0;
-
-            // Get ephemeral token - RN WebSocket doesn't support subprotocol auth
-            const tokenResponse = await fetch('https://api.openai.com/v1/realtime/sessions', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${config.apiKey}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    model: OPENAI_MODEL,
-                    voice: OPENAI_VOICE,
-                }),
-            });
-
-            if (!tokenResponse.ok) {
-                const errorText = await tokenResponse.text();
-                console.error('[Voice] Failed to get ephemeral token:', tokenResponse.status, errorText);
-                storage.getState().setRealtimeStatus('error');
-                let parsed: { error?: { code?: string; type?: string; message?: string } } | null = null;
-                try { parsed = JSON.parse(errorText); } catch {}
-                const message = parsed?.error
-                    ? humanizeOpenAIError(parsed.error)
-                    : tokenResponse.status === 402 || tokenResponse.status === 429
-                        ? 'Your OpenAI account has run out of credits. Please add funds at platform.openai.com.'
-                        : t('errors.voiceServiceUnavailable');
-                Modal.alert(t('common.error'), message);
-                return;
-            }
-
-            const tokenData = await tokenResponse.json();
-            const ephemeralKey = tokenData.client_secret?.value;
-            if (!ephemeralKey) {
-                console.error('[Voice] No ephemeral key in response:', JSON.stringify(tokenData));
-                storage.getState().setRealtimeStatus('error');
-                return;
-            }
-
-            console.log('[Voice] Got ephemeral token, connecting WebSocket...');
 
             const url = `wss://api.openai.com/v1/realtime?model=${OPENAI_MODEL}`;
             ws = new WebSocket(url, [
                 'realtime',
-                `openai-insecure-api-key.${ephemeralKey}`,
+                `openai-insecure-api-key.${config.apiKey}`,
                 'openai-beta.realtime-v1',
             ]);
 
@@ -303,12 +259,12 @@ class RealtimeVoiceSessionImpl implements VoiceSession {
                 };
 
                 ws.onmessage = onMessage;
-                ws.onerror = (error: any) => {
-                    console.error('[Voice] WebSocket error:', JSON.stringify(error));
+                ws.onerror = (error) => {
+                    console.error('[Voice] WebSocket error:', error);
                     reject(error);
                 };
-                ws.onclose = (event: any) => {
-                    console.log('[Voice] WebSocket closed - code:', event?.code, 'reason:', event?.reason);
+                ws.onclose = () => {
+                    console.log('[Voice] WebSocket closed');
                     stopRecording();
                     isResponseActive = false;
                     pendingResponseAction = null;
@@ -349,24 +305,8 @@ class RealtimeVoiceSessionImpl implements VoiceSession {
                             storage.getState().setRealtimeMode('speaking');
                         }
 
-                        if (data.type === 'input_audio_buffer.speech_started') {
-                            console.log('[Voice] Speech detected by server');
-                        }
-
-                        if (data.type === 'input_audio_buffer.speech_stopped') {
-                            console.log('[Voice] Speech ended');
-                        }
-
                         if (data.type === 'error') {
-                            console.error('[Voice] API error:', JSON.stringify(data.error));
-                            const message = humanizeOpenAIError(data.error);
-                            storage.getState().setRealtimeStatus('error');
-                            stopRecording();
-                            if (ws) {
-                                ws.close();
-                                ws = null;
-                            }
-                            Modal.alert(t('common.error'), message);
+                            console.error('[Voice] API error:', data.error);
                         }
                     };
                 };
@@ -398,8 +338,6 @@ class RealtimeVoiceSessionImpl implements VoiceSession {
             playbackContext.close();
             playbackContext = null;
         }
-        isResponseActive = false;
-        pendingResponseAction = null;
         storage.getState().setRealtimeStatus('disconnected');
     }
 
@@ -435,7 +373,7 @@ class RealtimeVoiceSessionImpl implements VoiceSession {
     }
 }
 
-export const RealtimeVoiceSession: React.FC = () => {
+export const OpenAIVoiceSession: React.FC = () => {
     const hasRegistered = useRef(false);
 
     useEffect(() => {
@@ -443,7 +381,7 @@ export const RealtimeVoiceSession: React.FC = () => {
             try {
                 registerVoiceSession(new RealtimeVoiceSessionImpl());
                 hasRegistered.current = true;
-                console.log('[Voice] Native voice session registered');
+                console.log('[Voice] Web voice session registered');
             } catch (error) {
                 console.error('[Voice] Failed to register voice session:', error);
             }

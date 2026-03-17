@@ -1,12 +1,98 @@
 import type { VoiceSession } from './types';
+import { fetchVoiceToken } from '@/sync/apiVoice';
 import { storage } from '@/sync/storage';
+import { sync } from '@/sync/sync';
 import { Modal } from '@/modal';
+import { TokenStorage } from '@/auth/tokenStorage';
 import { t } from '@/text';
+import { config } from '@/config';
 import { requestMicrophonePermission, showMicrophonePermissionDeniedAlert } from '@/utils/microphonePermissions';
 
 let voiceSession: VoiceSession | null = null;
 let voiceSessionStarted: boolean = false;
 let currentSessionId: string | null = null;
+
+async function startElevenLabsSession(sessionId: string, initialContext?: string) {
+    if (!voiceSession) return;
+
+    const experimentsEnabled = storage.getState().settings.experiments;
+    const agentId = __DEV__ ? config.elevenLabsAgentIdDev : config.elevenLabsAgentIdProd;
+
+    if (!agentId) {
+        console.error('Agent ID not configured');
+        return;
+    }
+
+    // Simple path: No experiments = no auth needed
+    if (!experimentsEnabled) {
+        currentSessionId = sessionId;
+        voiceSessionStarted = true;
+        await voiceSession.startSession({
+            sessionId,
+            initialContext,
+            agentId
+        });
+        return;
+    }
+
+    // Experiments enabled = full auth flow
+    const credentials = await TokenStorage.getCredentials();
+    if (!credentials) {
+        Modal.alert(t('common.error'), t('errors.authenticationFailed'));
+        return;
+    }
+
+    const response = await fetchVoiceToken(credentials, sessionId);
+    console.log('[Voice] fetchVoiceToken response:', response);
+
+    if (!response.allowed) {
+        console.log('[Voice] Not allowed, presenting paywall...');
+        const result = await sync.presentPaywall();
+        console.log('[Voice] Paywall result:', result);
+        if (result.purchased) {
+            await startRealtimeSession(sessionId, initialContext);
+        }
+        return;
+    }
+
+    currentSessionId = sessionId;
+    voiceSessionStarted = true;
+
+    if (response.token) {
+        await voiceSession.startSession({
+            sessionId,
+            initialContext,
+            token: response.token,
+            agentId: response.agentId
+        });
+    } else {
+        await voiceSession.startSession({
+            sessionId,
+            initialContext,
+            agentId
+        });
+    }
+}
+
+async function startOpenAISession(sessionId: string, initialContext?: string) {
+    if (!voiceSession) return;
+
+    const apiKey = storage.getState().settings.inferenceOpenAIKey;
+
+    if (!apiKey) {
+        console.error('[Voice] OpenAI API key not configured');
+        Modal.alert(t('common.error'), 'OpenAI API key not configured. Add your key in Settings > Voice.');
+        return;
+    }
+
+    currentSessionId = sessionId;
+    voiceSessionStarted = true;
+    await voiceSession.startSession({
+        sessionId,
+        initialContext,
+        apiKey,
+    });
+}
 
 export async function startRealtimeSession(sessionId: string, initialContext?: string) {
     if (!voiceSession) {
@@ -22,22 +108,14 @@ export async function startRealtimeSession(sessionId: string, initialContext?: s
         return;
     }
 
-    const apiKey = storage.getState().settings.inferenceOpenAIKey;
-
-    if (!apiKey) {
-        console.error('[Voice] OpenAI API key not configured');
-        Modal.alert(t('common.error'), 'OpenAI API key not configured. Add your key in Settings > Voice.');
-        return;
-    }
+    const voiceBackend = storage.getState().settings.voiceBackend;
 
     try {
-        currentSessionId = sessionId;
-        voiceSessionStarted = true;
-        await voiceSession.startSession({
-            sessionId,
-            initialContext,
-            apiKey,
-        });
+        if (voiceBackend === 'openai') {
+            await startOpenAISession(sessionId, initialContext);
+        } else {
+            await startElevenLabsSession(sessionId, initialContext);
+        }
     } catch (error) {
         console.error('Failed to start realtime session:', error);
         currentSessionId = null;

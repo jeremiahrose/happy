@@ -257,6 +257,7 @@ export const SettingsSchema = z.object({
 
     viewInline: z.boolean().describe('Whether to view inline tool calls'),
     inferenceOpenAIKey: z.string().nullish().describe('OpenAI API key for inference'),
+    voiceBackend: z.enum(['elevenlabs', 'openai']).describe('Voice assistant backend provider'),
     expandTodos: z.boolean().describe('Whether to expand todo lists'),
     showLineNumbers: z.boolean().describe('Whether to show line numbers in diffs'),
     showLineNumbersInToolViews: z.boolean().describe('Whether to show line numbers in tool view diffs'),
@@ -326,6 +327,7 @@ export const settingsDefaults: Settings = {
     schemaVersion: SUPPORTED_SCHEMA_VERSION,
     viewInline: false,
     inferenceOpenAIKey: null,
+    voiceBackend: 'elevenlabs',
     expandTodos: true,
     showLineNumbers: true,
     showLineNumbersInToolViews: false,

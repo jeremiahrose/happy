@@ -556,6 +556,10 @@ export const en = {
 
     settingsVoice: {
         // Voice settings screen
+        backendTitle: 'Voice Provider',
+        backendDescription: 'Choose which voice service to use for the voice assistant.',
+        backendElevenLabsSubtitle: 'Default provider, no API key needed',
+        backendOpenAISubtitle: 'Requires your own OpenAI API key',
         apiKeyTitle: 'OpenAI API Key',
         apiKeyDescription: 'Required for voice assistant. Enter your OpenAI API key to enable voice features.',
         apiKeyPlaceholder: 'sk-...',

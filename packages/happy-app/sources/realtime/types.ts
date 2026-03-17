@@ -1,7 +1,11 @@
 export interface VoiceSessionConfig {
     sessionId: string;
     initialContext?: string;
-    apiKey: string;
+    // OpenAI backend
+    apiKey?: string;
+    // ElevenLabs backend
+    token?: string;
+    agentId?: string;
 }
 
 export interface VoiceSession {
