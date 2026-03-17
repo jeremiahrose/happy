@@ -105,20 +105,28 @@ function onResponseDone() {
     }
 }
 
+let audioChunkCount = 0;
+
 function startRecording() {
     try {
+        audioChunkCount = 0;
         recorder = new AudioRecorder({
             sampleRate: OPENAI_SAMPLE_RATE,
             bufferLengthInSamples: 2400,
         });
 
         recorder.onAudioReady((event: { buffer: RNAudioBuffer; numFrames: number; when: number }) => {
+            audioChunkCount++;
+            if (audioChunkCount <= 3 || audioChunkCount % 100 === 0) {
+                console.log(`[Voice] Audio chunk #${audioChunkCount} - frames: ${event.numFrames}, channels: ${event.buffer.numberOfChannels}`);
+            }
             const channelData = event.buffer.getChannelData(0);
             const base64 = float32ToBase64Pcm16(channelData);
             sendWsMessage({ type: 'input_audio_buffer.append', audio: base64 });
         });
 
         recorder.start();
+        console.log('[Voice] AudioRecorder started');
     } catch (error) {
         console.error('[Voice] Failed to start recording:', error);
     }
@@ -188,10 +196,41 @@ class RealtimeVoiceSessionImpl implements VoiceSession {
             playbackContext = new RNAudioContext({ sampleRate: OPENAI_SAMPLE_RATE });
             nextPlayTime = 0;
 
+            // Get ephemeral token - RN WebSocket doesn't support subprotocol auth
+            const tokenResponse = await fetch('https://api.openai.com/v1/realtime/sessions', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${config.apiKey}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    model: OPENAI_MODEL,
+                    voice: OPENAI_VOICE,
+                }),
+            });
+
+            if (!tokenResponse.ok) {
+                const errorText = await tokenResponse.text();
+                console.error('[Voice] Failed to get ephemeral token:', tokenResponse.status, errorText);
+                console.error(`[Voice] OpenAI API returned ${tokenResponse.status} — ${tokenResponse.status === 402 || tokenResponse.status === 429 ? 'check your OpenAI billing/usage limits' : 'unknown error'}`);
+                storage.getState().setRealtimeStatus('error');
+                return;
+            }
+
+            const tokenData = await tokenResponse.json();
+            const ephemeralKey = tokenData.client_secret?.value;
+            if (!ephemeralKey) {
+                console.error('[Voice] No ephemeral key in response:', JSON.stringify(tokenData));
+                storage.getState().setRealtimeStatus('error');
+                return;
+            }
+
+            console.log('[Voice] Got ephemeral token, connecting WebSocket...');
+
             const url = `wss://api.openai.com/v1/realtime?model=${OPENAI_MODEL}`;
             ws = new WebSocket(url, [
                 'realtime',
-                `openai-insecure-api-key.${config.apiKey}`,
+                `openai-insecure-api-key.${ephemeralKey}`,
                 'openai-beta.realtime-v1',
             ]);
 
@@ -237,12 +276,13 @@ class RealtimeVoiceSessionImpl implements VoiceSession {
                 };
 
                 ws.onmessage = onMessage;
-                ws.onerror = (error) => {
-                    console.error('[Voice] WebSocket error:', error);
+                ws.onerror = (error: any) => {
+                    console.error('[Voice] WebSocket error:', JSON.stringify(error));
+                    console.error('[Voice] WebSocket error message:', error?.message);
                     reject(error);
                 };
-                ws.onclose = () => {
-                    console.log('[Voice] WebSocket closed');
+                ws.onclose = (event: any) => {
+                    console.log('[Voice] WebSocket closed - code:', event?.code, 'reason:', event?.reason);
                     stopRecording();
                     isResponseActive = false;
                     pendingResponseAction = null;
@@ -284,11 +324,21 @@ class RealtimeVoiceSessionImpl implements VoiceSession {
                         }
 
                         if (data.type === 'input_audio_buffer.speech_started') {
-                            // User started speaking - could cancel current playback
+                            console.log('[Voice] Speech detected by server');
+                        }
+
+                        if (data.type === 'input_audio_buffer.speech_stopped') {
+                            console.log('[Voice] Speech ended');
                         }
 
                         if (data.type === 'error') {
-                            console.error('[Voice] API error:', data.error);
+                            console.error('[Voice] API error:', JSON.stringify(data.error));
+                            storage.getState().setRealtimeStatus('error');
+                            stopRecording();
+                            if (ws) {
+                                ws.close();
+                                ws = null;
+                            }
                         }
                     };
                 };
