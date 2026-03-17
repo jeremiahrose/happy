@@ -23,6 +23,8 @@ let nextPlayTime = 0;
 let mediaStream: MediaStream | null = null;
 let workletNode: AudioWorkletNode | null = null;
 let recordingContext: AudioContext | null = null;
+let isResponseActive = false;
+let pendingResponseAction: (() => void) | null = null;
 
 function playPcm16Base64(base64: string) {
     if (!playbackContext) return;
@@ -55,6 +57,31 @@ function playPcm16Base64(base64: string) {
 function sendWsMessage(data: Record<string, unknown>) {
     if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify(data));
+    }
+}
+
+/**
+ * Creates a response, or queues it if one is already in-flight.
+ * OpenAI's Realtime API rejects concurrent response.create calls.
+ */
+function createResponseOrQueue(action: () => void) {
+    if (isResponseActive) {
+        pendingResponseAction = action;
+        return;
+    }
+    action();
+}
+
+function onResponseStarted() {
+    isResponseActive = true;
+}
+
+function onResponseDone() {
+    isResponseActive = false;
+    if (pendingResponseAction) {
+        const action = pendingResponseAction;
+        pendingResponseAction = null;
+        action();
     }
 }
 
@@ -141,12 +168,15 @@ async function handleToolCall(name: string, args: string, callId: string) {
             },
         });
 
-        sendWsMessage({
-            type: 'response.create',
-            response: {
-                modalities: ['text', 'audio'],
-                tool_choice: 'none',
-            },
+        createResponseOrQueue(() => {
+            onResponseStarted();
+            sendWsMessage({
+                type: 'response.create',
+                response: {
+                    modalities: ['text', 'audio'],
+                    tool_choice: 'none',
+                },
+            });
         });
     } catch (error) {
         console.error('[Voice] Tool execution failed:', error);
@@ -232,6 +262,8 @@ class RealtimeVoiceSessionImpl implements VoiceSession {
                 ws.onclose = () => {
                     console.log('[Voice] WebSocket closed');
                     stopRecording();
+                    isResponseActive = false;
+                    pendingResponseAction = null;
                     storage.getState().setRealtimeStatus('disconnected');
                     storage.getState().setRealtimeMode('idle', true);
                     storage.getState().clearRealtimeModeDebounce();
@@ -249,13 +281,20 @@ class RealtimeVoiceSessionImpl implements VoiceSession {
                             playPcm16Base64(data.delta);
                         }
 
-                        if (data.type === 'response.done' && data.response?.output) {
-                            for (const item of data.response.output) {
-                                if (item.type === 'function_call' && item.call_id) {
-                                    handleToolCall(item.name, item.arguments, item.call_id);
+                        if (data.type === 'response.created') {
+                            onResponseStarted();
+                        }
+
+                        if (data.type === 'response.done') {
+                            if (data.response?.output) {
+                                for (const item of data.response.output) {
+                                    if (item.type === 'function_call' && item.call_id) {
+                                        handleToolCall(item.name, item.arguments, item.call_id);
+                                    }
                                 }
                             }
                             storage.getState().setRealtimeMode('idle');
+                            onResponseDone();
                         }
 
                         if (data.type === 'response.audio_transcript.delta') {
@@ -305,15 +344,18 @@ class RealtimeVoiceSessionImpl implements VoiceSession {
     sendTextMessage(message: string): void {
         if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
-        sendWsMessage({
-            type: 'conversation.item.create',
-            item: {
-                type: 'message',
-                role: 'user',
-                content: [{ type: 'input_text', text: message }],
-            },
+        createResponseOrQueue(() => {
+            sendWsMessage({
+                type: 'conversation.item.create',
+                item: {
+                    type: 'message',
+                    role: 'user',
+                    content: [{ type: 'input_text', text: message }],
+                },
+            });
+            onResponseStarted();
+            sendWsMessage({ type: 'response.create' });
         });
-        sendWsMessage({ type: 'response.create' });
     }
 
     sendContextualUpdate(update: string): void {

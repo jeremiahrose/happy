@@ -25,10 +25,37 @@ import {
 let peerConnection: RTCPeerConnection | null = null;
 let dataChannel: any = null;
 let localStream: RNMediaStream | null = null;
+let isResponseActive = false;
+let pendingResponseAction: (() => void) | null = null;
 
 function sendDataChannelMessage(data: Record<string, unknown>) {
     if (dataChannel && dataChannel.readyState === 'open') {
         dataChannel.send(JSON.stringify(data));
+    }
+}
+
+/**
+ * Creates a response, or queues it if one is already in-flight.
+ * OpenAI's Realtime API rejects concurrent response.create calls.
+ */
+function createResponseOrQueue(action: () => void) {
+    if (isResponseActive) {
+        pendingResponseAction = action;
+        return;
+    }
+    action();
+}
+
+function onResponseStarted() {
+    isResponseActive = true;
+}
+
+function onResponseDone() {
+    isResponseActive = false;
+    if (pendingResponseAction) {
+        const action = pendingResponseAction;
+        pendingResponseAction = null;
+        action();
     }
 }
 
@@ -52,12 +79,15 @@ async function handleToolCall(name: string, args: string, callId: string) {
             },
         });
 
-        sendDataChannelMessage({
-            type: 'response.create',
-            response: {
-                modalities: ['text', 'audio'],
-                tool_choice: 'none',
-            },
+        createResponseOrQueue(() => {
+            onResponseStarted();
+            sendDataChannelMessage({
+                type: 'response.create',
+                response: {
+                    modalities: ['text', 'audio'],
+                    tool_choice: 'none',
+                },
+            });
         });
     } catch (error) {
         console.error('[Voice] Tool execution failed:', error);
@@ -141,13 +171,20 @@ class RealtimeVoiceSessionImpl implements VoiceSession {
                 try {
                     const data = JSON.parse(event.data);
 
-                    if (data.type === 'response.done' && data.response?.output) {
-                        for (const item of data.response.output) {
-                            if (item.type === 'function_call' && item.call_id) {
-                                handleToolCall(item.name, item.arguments, item.call_id);
+                    if (data.type === 'response.created') {
+                        onResponseStarted();
+                    }
+
+                    if (data.type === 'response.done') {
+                        if (data.response?.output) {
+                            for (const item of data.response.output) {
+                                if (item.type === 'function_call' && item.call_id) {
+                                    handleToolCall(item.name, item.arguments, item.call_id);
+                                }
                             }
                         }
                         storage.getState().setRealtimeMode('idle');
+                        onResponseDone();
                     }
 
                     if (data.type === 'response.audio_transcript.delta') {
@@ -216,6 +253,8 @@ class RealtimeVoiceSessionImpl implements VoiceSession {
             peerConnection.close();
             peerConnection = null;
         }
+        isResponseActive = false;
+        pendingResponseAction = null;
         storage.getState().setRealtimeStatus('disconnected');
         storage.getState().setRealtimeMode('idle', true);
         storage.getState().clearRealtimeModeDebounce();
@@ -226,15 +265,18 @@ class RealtimeVoiceSessionImpl implements VoiceSession {
     }
 
     sendTextMessage(message: string): void {
-        sendDataChannelMessage({
-            type: 'conversation.item.create',
-            item: {
-                type: 'message',
-                role: 'user',
-                content: [{ type: 'input_text', text: message }],
-            },
+        createResponseOrQueue(() => {
+            sendDataChannelMessage({
+                type: 'conversation.item.create',
+                item: {
+                    type: 'message',
+                    role: 'user',
+                    content: [{ type: 'input_text', text: message }],
+                },
+            });
+            onResponseStarted();
+            sendDataChannelMessage({ type: 'response.create' });
         });
-        sendDataChannelMessage({ type: 'response.create' });
     }
 
     sendContextualUpdate(update: string): void {
