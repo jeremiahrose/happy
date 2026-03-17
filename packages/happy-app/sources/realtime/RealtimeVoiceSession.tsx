@@ -1,6 +1,8 @@
 import React, { useEffect, useRef } from 'react';
 import { registerVoiceSession } from './RealtimeSession';
 import { storage } from '@/sync/storage';
+import { Modal } from '@/modal';
+import { t } from '@/text';
 import { realtimeClientTools } from './realtimeClientTools';
 import {
     OPENAI_VOICE,
@@ -72,6 +74,21 @@ function playPcm16Base64(base64: string) {
     const startTime = Math.max(now, nextPlayTime);
     source.start(startTime);
     nextPlayTime = startTime + buffer.duration;
+}
+
+function humanizeOpenAIError(error: { type?: string; code?: string; message?: string }): string {
+    const code = error?.code ?? '';
+    const type = error?.type ?? '';
+    if (code === 'insufficient_quota' || code === 'billing_hard_limit_reached' || type === 'insufficient_quota') {
+        return 'Your OpenAI account has run out of credits. Please add funds at platform.openai.com.';
+    }
+    if (code === 'rate_limit_exceeded') {
+        return 'OpenAI rate limit reached. Please wait a moment and try again.';
+    }
+    if (code === 'invalid_api_key') {
+        return 'Your OpenAI API key is invalid. Please check your settings.';
+    }
+    return error?.message ?? 'An unexpected error occurred with the voice service.';
 }
 
 function sendWsMessage(data: Record<string, unknown>) {
@@ -212,8 +229,15 @@ class RealtimeVoiceSessionImpl implements VoiceSession {
             if (!tokenResponse.ok) {
                 const errorText = await tokenResponse.text();
                 console.error('[Voice] Failed to get ephemeral token:', tokenResponse.status, errorText);
-                console.error(`[Voice] OpenAI API returned ${tokenResponse.status} — ${tokenResponse.status === 402 || tokenResponse.status === 429 ? 'check your OpenAI billing/usage limits' : 'unknown error'}`);
                 storage.getState().setRealtimeStatus('error');
+                let parsed: { error?: { code?: string; type?: string; message?: string } } | null = null;
+                try { parsed = JSON.parse(errorText); } catch {}
+                const message = parsed?.error
+                    ? humanizeOpenAIError(parsed.error)
+                    : tokenResponse.status === 402 || tokenResponse.status === 429
+                        ? 'Your OpenAI account has run out of credits. Please add funds at platform.openai.com.'
+                        : t('errors.voiceServiceUnavailable');
+                Modal.alert(t('common.error'), message);
                 return;
             }
 
@@ -333,12 +357,14 @@ class RealtimeVoiceSessionImpl implements VoiceSession {
 
                         if (data.type === 'error') {
                             console.error('[Voice] API error:', JSON.stringify(data.error));
+                            const message = humanizeOpenAIError(data.error);
                             storage.getState().setRealtimeStatus('error');
                             stopRecording();
                             if (ws) {
                                 ws.close();
                                 ws = null;
                             }
+                            Modal.alert(t('common.error'), message);
                         }
                     };
                 };
