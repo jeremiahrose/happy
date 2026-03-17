@@ -2,7 +2,6 @@ import type { VoiceSession } from './types';
 import { storage } from '@/sync/storage';
 import { Modal } from '@/modal';
 import { t } from '@/text';
-import { config } from '@/config';
 import { requestMicrophonePermission, showMicrophonePermissionDeniedAlert } from '@/utils/microphonePermissions';
 
 let voiceSession: VoiceSession | null = null;
@@ -23,11 +22,11 @@ export async function startRealtimeSession(sessionId: string, initialContext?: s
         return;
     }
 
-    const apiKey = config.openaiApiKey;
+    const apiKey = storage.getState().settings.inferenceOpenAIKey;
 
     if (!apiKey) {
         console.error('[Voice] OpenAI API key not configured');
-        Modal.alert(t('common.error'), 'OpenAI API key not configured. Set EXPO_PUBLIC_OPENAI_API_KEY in your environment.');
+        Modal.alert(t('common.error'), 'OpenAI API key not configured. Add your key in Settings > Voice.');
         return;
     }
 

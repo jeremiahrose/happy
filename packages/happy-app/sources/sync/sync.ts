@@ -1367,9 +1367,10 @@ class Sync {
             parsedSettings = { ...settingsDefaults };
         }
 
-        // Log
+        // Log (redact sensitive fields)
+        const { inferenceOpenAIKey: _redacted, ...safeSettings } = parsedSettings;
         console.log('settings', JSON.stringify({
-            settings: parsedSettings,
+            settings: safeSettings,
             version: data.settingsVersion
         }));
 

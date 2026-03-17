@@ -556,6 +556,9 @@ export const en = {
 
     settingsVoice: {
         // Voice settings screen
+        apiKeyTitle: 'OpenAI API Key',
+        apiKeyDescription: 'Required for voice assistant. Enter your OpenAI API key to enable voice features.',
+        apiKeyPlaceholder: 'sk-...',
         languageTitle: 'Language',
         languageDescription: 'Choose your preferred language for voice assistant interactions. This setting syncs across all your devices.',
         preferredLanguage: 'Preferred Language',

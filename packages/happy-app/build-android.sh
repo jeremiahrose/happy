@@ -18,15 +18,10 @@ if [ -f "$DIR/.env" ]; then
     echo "Loaded .env"
 else
     echo "No .env found. Create packages/happy-app/.env with:"
-    echo "  OPENAI_API_KEY=sk-..."
     echo "  PIXEL_IP=..."
     echo "  PIXEL_ADB_PORT=5555"
     exit 1
 fi
-
-# Export for Expo
-export EXPO_PUBLIC_OPENAI_API_KEY="${OPENAI_API_KEY:?OPENAI_API_KEY not set}"
-echo "OpenAI key: ${EXPO_PUBLIC_OPENAI_API_KEY:0:20}..."
 
 # Prebuild native Android project if needed
 if [ ! -d "$DIR/android" ]; then

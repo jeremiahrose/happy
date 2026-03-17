@@ -6,7 +6,6 @@ export interface AppConfig {
     revenueCatAppleKey?: string;
     revenueCatGoogleKey?: string;
     revenueCatStripeKey?: string;
-    openaiApiKey?: string;
     serverUrl?: string;
 }
 
@@ -82,10 +81,6 @@ export function loadAppConfig(): AppConfig {
     if (process.env.EXPO_PUBLIC_POSTHOG_KEY && config.postHogKey !== process.env.EXPO_PUBLIC_POSTHOG_KEY) {
         console.log('[loadAppConfig] Override postHogKey from EXPO_PUBLIC_POSTHOG_KEY');
         config.postHogKey = process.env.EXPO_PUBLIC_POSTHOG_KEY;
-    }
-    if (process.env.EXPO_PUBLIC_OPENAI_API_KEY && config.openaiApiKey !== process.env.EXPO_PUBLIC_OPENAI_API_KEY) {
-        console.log('[loadAppConfig] Override openaiApiKey from EXPO_PUBLIC_OPENAI_API_KEY');
-        config.openaiApiKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
     }
     if (process.env.EXPO_PUBLIC_SERVER_URL && config.serverUrl !== process.env.EXPO_PUBLIC_SERVER_URL) {
         console.log('[loadAppConfig] Override serverUrl from EXPO_PUBLIC_SERVER_URL');
