@@ -15,6 +15,7 @@ import {
     MediaStream as RNMediaStream,
     RTCSessionDescription,
 } from '@livekit/react-native-webrtc';
+import AudioSession from '@livekit/react-native/src/audio/AudioSession';
 
 /**
  * OpenAI Realtime API voice session for React Native.
@@ -141,24 +142,31 @@ class RealtimeVoiceSessionImpl implements VoiceSession {
                 throw new Error('No ephemeral key in response');
             }
 
-            // Step 2: Create RTCPeerConnection
+            // Step 2: Configure audio session for Bluetooth support
+            await AudioSession.startAudioSession();
+            const outputs = await AudioSession.getAudioOutputs();
+            if (outputs.includes('bluetooth')) {
+                await AudioSession.selectAudioOutput('bluetooth');
+            }
+
+            // Step 3: Create RTCPeerConnection
             const pc = new RTCPeerConnection({});
             peerConnection = pc;
 
-            // Step 3: Set up audio - get mic stream and add track
+            // Step 4: Set up audio - get mic stream and add track
             const stream = await mediaDevices.getUserMedia({ audio: true }) as RNMediaStream;
             localStream = stream;
             for (const track of stream.getTracks()) {
                 pc.addTrack(track, stream);
             }
 
-            // Step 4: Handle remote audio track (playback is automatic via WebRTC)
+            // Step 5: Handle remote audio track (playback is automatic via WebRTC)
             (pc as any).addEventListener('track', () => {
                 console.log('[Voice] Remote audio track received');
                 // WebRTC handles playback automatically on native
             });
 
-            // Step 5: Create data channel for events
+            // Step 6: Create data channel for events
             dataChannel = pc.createDataChannel('oai-events');
 
             dataChannel.onopen = () => {
@@ -203,11 +211,11 @@ class RealtimeVoiceSessionImpl implements VoiceSession {
                 console.log('[Voice] Data channel closed');
             };
 
-            // Step 6: Create and set local SDP offer
+            // Step 7: Create and set local SDP offer
             const offer = await pc.createOffer({});
             await pc.setLocalDescription(offer);
 
-            // Step 7: Send offer to OpenAI and get answer
+            // Step 8: Send offer to OpenAI and get answer
             const sdpResponse = await fetch(`https://api.openai.com/v1/realtime?model=${OPENAI_MODEL}`, {
                 method: 'POST',
                 headers: {
@@ -253,6 +261,7 @@ class RealtimeVoiceSessionImpl implements VoiceSession {
             peerConnection.close();
             peerConnection = null;
         }
+        AudioSession.stopAudioSession();
         isResponseActive = false;
         pendingResponseAction = null;
         storage.getState().setRealtimeStatus('disconnected');
