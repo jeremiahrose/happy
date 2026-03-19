@@ -40,11 +40,14 @@ export const realtimeClientTools = {
     },
 
     /**
-     * Process a permission request from Claude Code
+     * Process a permission request from Claude Code.
+     * The requestId parameter identifies which specific request to act on,
+     * allowing multiple concurrent permission requests to be handled correctly.
      */
     processPermissionRequest: async (parameters: unknown) => {
         const messageSchema = z.object({
-            decision: z.enum(['allow', 'deny'])
+            decision: z.enum(['allow', 'deny']),
+            requestId: z.string().optional(),
         });
         const parsedMessage = messageSchema.safeParse(parameters);
 
@@ -55,25 +58,28 @@ export const realtimeClientTools = {
 
         const decision = parsedMessage.data.decision;
         const sessionId = getCurrentRealtimeSessionId();
-        
+
         if (!sessionId) {
             console.error('❌ No active session');
             return "error (no active session)";
         }
-        
-        console.log('🔍 processPermissionRequest called with:', decision);
-        
+
+        console.log('🔍 processPermissionRequest called with:', decision, 'requestId:', parsedMessage.data.requestId);
+
         // Get the current session to check for permission requests
         const session = storage.getState().sessions[sessionId];
         const requests = session?.agentState?.requests;
-        
+
         if (!requests || Object.keys(requests).length === 0) {
             console.error('❌ No active permission request');
             return "error (no active permission request)";
         }
-        
-        const requestId = Object.keys(requests)[0];
-        
+
+        // Use the provided requestId, or fall back to the first pending request
+        const requestId = parsedMessage.data.requestId && requests[parsedMessage.data.requestId]
+            ? parsedMessage.data.requestId
+            : Object.keys(requests)[0];
+
         try {
             if (decision === 'allow') {
                 await sessionAllow(sessionId, requestId);

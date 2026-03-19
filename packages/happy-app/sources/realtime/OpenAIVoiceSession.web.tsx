@@ -24,7 +24,7 @@ let mediaStream: MediaStream | null = null;
 let workletNode: AudioWorkletNode | null = null;
 let recordingContext: AudioContext | null = null;
 let isResponseActive = false;
-let pendingResponseAction: (() => void) | null = null;
+let pendingResponseQueue: (() => void)[] = [];
 
 function playPcm16Base64(base64: string) {
     if (!playbackContext) return;
@@ -63,10 +63,11 @@ function sendWsMessage(data: Record<string, unknown>) {
 /**
  * Creates a response, or queues it if one is already in-flight.
  * OpenAI's Realtime API rejects concurrent response.create calls.
+ * Uses a FIFO queue so no events are dropped when multiple arrive during a response.
  */
 function createResponseOrQueue(action: () => void) {
     if (isResponseActive) {
-        pendingResponseAction = action;
+        pendingResponseQueue.push(action);
         return;
     }
     action();
@@ -78,9 +79,8 @@ function onResponseStarted() {
 
 function onResponseDone() {
     isResponseActive = false;
-    if (pendingResponseAction) {
-        const action = pendingResponseAction;
-        pendingResponseAction = null;
+    if (pendingResponseQueue.length > 0) {
+        const action = pendingResponseQueue.shift()!;
         action();
     }
 }
@@ -267,7 +267,7 @@ class RealtimeVoiceSessionImpl implements VoiceSession {
                     console.log('[Voice] WebSocket closed');
                     stopRecording();
                     isResponseActive = false;
-                    pendingResponseAction = null;
+                    pendingResponseQueue = [];
                     storage.getState().setRealtimeStatus('disconnected');
                     storage.getState().setRealtimeMode('idle', true);
                     storage.getState().clearRealtimeModeDebounce();

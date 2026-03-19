@@ -24,7 +24,7 @@ export const OPENAI_VOICE_TOOLS = [
     {
         type: 'function' as const,
         name: 'processPermissionRequest',
-        description: 'Approve or deny a pending permission request from Claude Code. NEVER call this without first asking the user for their decision.',
+        description: 'Approve or deny a pending permission request from Claude Code. NEVER call this without first asking the user for their decision. Always pass the request_id from the permission notification.',
         parameters: {
             type: 'object',
             properties: {
@@ -33,8 +33,12 @@ export const OPENAI_VOICE_TOOLS = [
                     enum: ['allow', 'deny'],
                     description: 'Whether to allow or deny the permission request.',
                 },
+                requestId: {
+                    type: 'string',
+                    description: 'The request_id from the permission request notification. Always include this.',
+                },
             },
-            required: ['decision'],
+            required: ['decision', 'requestId'],
             additionalProperties: false,
         },
     },

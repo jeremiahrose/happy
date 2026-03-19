@@ -30,7 +30,7 @@ let playbackContext: RNAudioContext | null = null;
 let nextPlayTime = 0;
 let recorder: AudioRecorder | null = null;
 let isResponseActive = false;
-let pendingResponseAction: (() => void) | null = null;
+let pendingResponseQueue: (() => void)[] = [];
 
 function float32ToBase64Pcm16(float32: Float32Array): string {
     const pcm16 = new Int16Array(float32.length);
@@ -99,10 +99,11 @@ function sendWsMessage(data: Record<string, unknown>) {
 /**
  * Creates a response, or queues it if one is already in-flight.
  * OpenAI's Realtime API rejects concurrent response.create calls.
+ * Uses a FIFO queue so no events are dropped when multiple arrive during a response.
  */
 function createResponseOrQueue(action: () => void) {
     if (isResponseActive) {
-        pendingResponseAction = action;
+        pendingResponseQueue.push(action);
         return;
     }
     action();
@@ -114,9 +115,8 @@ function onResponseStarted() {
 
 function onResponseDone() {
     isResponseActive = false;
-    if (pendingResponseAction) {
-        const action = pendingResponseAction;
-        pendingResponseAction = null;
+    if (pendingResponseQueue.length > 0) {
+        const action = pendingResponseQueue.shift()!;
         action();
     }
 }
@@ -311,7 +311,7 @@ class RealtimeVoiceSessionImpl implements VoiceSession {
                     console.log('[Voice] WebSocket closed - code:', event?.code, 'reason:', event?.reason);
                     stopRecording();
                     isResponseActive = false;
-                    pendingResponseAction = null;
+                    pendingResponseQueue = [];
                     storage.getState().setRealtimeStatus('disconnected');
                     storage.getState().setRealtimeMode('idle', true);
                     storage.getState().clearRealtimeModeDebounce();
@@ -399,7 +399,7 @@ class RealtimeVoiceSessionImpl implements VoiceSession {
             playbackContext = null;
         }
         isResponseActive = false;
-        pendingResponseAction = null;
+        pendingResponseQueue = [];
         storage.getState().setRealtimeStatus('disconnected');
     }
 
