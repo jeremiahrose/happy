@@ -62,7 +62,7 @@ export function loadAppConfig(): AppConfig {
         console.warn('[loadAppConfig] Error accessing Constants.expoConfig:', e);
     }
 
-    console.log('[loadAppConfig] Final merged config:', JSON.stringify(config, null, 2));
+    console.log('[loadAppConfig] Final merged config keys:', Object.keys(config));
 
     // Override with EXPO_PUBLIC_* env vars if present at runtime and different
     // Why: Native config is baked at prebuild time, but EXPO_PUBLIC_* vars

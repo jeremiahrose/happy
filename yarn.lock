@@ -966,32 +966,32 @@
   resolved "https://registry.yarnpkg.com/@electric-sql/pglite/-/pglite-0.3.15.tgz#073409dc9a6b0c2af2626d02af8c226293c6b059"
   integrity sha512-Cj++n1Mekf9ETfdc16TlDi+cDDQF0W7EcbyRHYOAeZdsAe8M/FJg18itDTSwyHfar2WIezawM9o0EKaRGVKygQ==
 
-"@elevenlabs/client@0.12.2":
-  version "0.12.2"
-  resolved "https://registry.yarnpkg.com/@elevenlabs/client/-/client-0.12.2.tgz#0a19057eb71c378cd115b2d3e8f292c5636c84a2"
-  integrity sha512-QWllhDndFfKmftlktNoa35+AF3gOCbSHowYhR42ZHb5u32lFbMPbh2BALCrpFa3edqCHSXtzG6zzLSAGjkhvHQ==
+"@elevenlabs/client@0.15.1":
+  version "0.15.1"
+  resolved "https://registry.yarnpkg.com/@elevenlabs/client/-/client-0.15.1.tgz#a562c5792ae14a40a6df7f248a36d7570f47610f"
+  integrity sha512-3iHSdwNTmPGvZcNxJSyqF7MOjFMpSJv09oB2Vut+23oXRLE6is2yQn1ypAqNDIGuwG3IsW0S7gU2SEdaKV+SJg==
   dependencies:
-    "@elevenlabs/types" "0.4.0"
+    "@elevenlabs/types" "0.6.0"
     livekit-client "^2.11.4"
 
-"@elevenlabs/react-native@^0.5.7":
-  version "0.5.8"
-  resolved "https://registry.yarnpkg.com/@elevenlabs/react-native/-/react-native-0.5.8.tgz#4df65c7d5910be2f6f77ff3953acaeac13cb3b8b"
-  integrity sha512-nrumWFAgu8rQIwt19mSTFSbz3VnxFDRCm2jjtY1p+Cn1i+ldXGpqJov2LQf/JAgBd1gtquuurv0dgDDwlLgHhg==
+"@elevenlabs/react-native@^0.5.11":
+  version "0.5.11"
+  resolved "https://registry.yarnpkg.com/@elevenlabs/react-native/-/react-native-0.5.11.tgz#edca8927b7235bffb200d06afbe32cc35414b106"
+  integrity sha512-OJZNVSw/0/U8fgeCzIRRDe0c+0yzg2nG6ejstczq08TufhHiJA1kzpvfpFKL3bynTudg4dKqnHNDmdfw6ef/cA==
   dependencies:
-    "@elevenlabs/types" "0.4.0"
+    "@elevenlabs/types" "0.6.0"
 
-"@elevenlabs/react@^0.12.3":
-  version "0.12.3"
-  resolved "https://registry.yarnpkg.com/@elevenlabs/react/-/react-0.12.3.tgz#131d342f98caffff861badce90ad826e3366a782"
-  integrity sha512-fQJlabwuvQziBCCNcxlXZt5GVxcPHjwb46NtSEbLJY0zaOUtWJynRX4kPfbz7ChqnMe7FAHYnrq2XsaSzpQXLQ==
+"@elevenlabs/react@^0.14.2":
+  version "0.14.2"
+  resolved "https://registry.yarnpkg.com/@elevenlabs/react/-/react-0.14.2.tgz#c3623abe078fb1ffebbe7a5af0c4dce8d492a4e8"
+  integrity sha512-/YGT92kcPICVU8/0NlwPci3NL8R3fyE7wpa+zfER+BIHdkgW5yxU+5f0KwnPKohhfFIj2oo+bRvxddVj/KUvjA==
   dependencies:
-    "@elevenlabs/client" "0.12.2"
+    "@elevenlabs/client" "0.15.1"
 
-"@elevenlabs/types@0.4.0":
-  version "0.4.0"
-  resolved "https://registry.yarnpkg.com/@elevenlabs/types/-/types-0.4.0.tgz#f5a45ef2b8ed5a304eef9f28ba0da0af8ccdd7c2"
-  integrity sha512-6CQb4r9DjepILhLybDxW0h8rvbsR8jPAp74HvFGYuvYdXcQRTkYTD9BQ4PV6VcuC1iqx0UljzJj8js3ADQ8EXw==
+"@elevenlabs/types@0.6.0":
+  version "0.6.0"
+  resolved "https://registry.yarnpkg.com/@elevenlabs/types/-/types-0.6.0.tgz#09ae3f4976addf2cd61c0b76203d2b93e9021e8f"
+  integrity sha512-2FihOiGf+KlTH1EYQoYsvnhSCMMaHZMDSXMYI25NUtv0NmWi86bB9Hp4BAHbNeEkCksPXKbPiX3b6KgP2JIg2g==
 
 "@emnapi/runtime@^1.7.0":
   version "1.8.1"

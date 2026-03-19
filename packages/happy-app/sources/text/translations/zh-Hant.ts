@@ -558,6 +558,13 @@ export const zhHant: TranslationStructure = {
 
     settingsVoice: {
         // Voice settings screen
+        backendTitle: '語音提供者',
+        backendDescription: '選擇語音助理使用的語音服務。',
+        backendElevenLabsSubtitle: '預設提供者，無需 API 金鑰',
+        backendOpenAISubtitle: '需要您自己的 OpenAI API 金鑰',
+        apiKeyTitle: 'OpenAI API Key',
+        apiKeyDescription: '語音助理必需。輸入您的 OpenAI API 金鑰以啟用語音功能。',
+        apiKeyPlaceholder: 'sk-...',
         languageTitle: '語言',
         languageDescription: '選擇您希望語音助理互動使用的語言。此設定將在您的所有裝置間同步。',
         preferredLanguage: '偏好語言',

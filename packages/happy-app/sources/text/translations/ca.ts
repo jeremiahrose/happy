@@ -557,6 +557,13 @@ export const ca: TranslationStructure = {
 
     settingsVoice: {
         // Voice settings screen
+        backendTitle: 'Proveïdor de veu',
+        backendDescription: 'Tria quin servei de veu utilitzar per a l\'assistent de veu.',
+        backendElevenLabsSubtitle: 'Proveïdor per defecte, no cal clau API',
+        backendOpenAISubtitle: 'Requereix la teva pròpia clau API d\'OpenAI',
+        apiKeyTitle: 'OpenAI API Key',
+        apiKeyDescription: 'Necessària per a l\'assistent de veu. Introdueix la teva clau API d\'OpenAI per habilitar les funcions de veu.',
+        apiKeyPlaceholder: 'sk-...',
         languageTitle: 'Idioma',
         languageDescription: 'Tria el teu idioma preferit per a les interaccions amb l\'assistent de veu. Aquesta configuració es sincronitza a tots els teus dispositius.',
         preferredLanguage: 'Idioma preferit',

@@ -589,6 +589,13 @@ export const ja: TranslationStructure = {
 
     settingsVoice: {
         // Voice settings screen
+        backendTitle: '音声プロバイダー',
+        backendDescription: '音声アシスタントに使用する音声サービスを選択します。',
+        backendElevenLabsSubtitle: 'デフォルトプロバイダー、APIキー不要',
+        backendOpenAISubtitle: 'OpenAI APIキーが必要です',
+        apiKeyTitle: 'OpenAI API Key',
+        apiKeyDescription: '音声アシスタントに必要です。音声機能を有効にするためにOpenAI APIキーを入力してください。',
+        apiKeyPlaceholder: 'sk-...',
         languageTitle: '言語',
         languageDescription: '音声アシスタントの操作に使用する言語を選択します。この設定はすべてのデバイスで同期されます。',
         preferredLanguage: '優先言語',

@@ -10,11 +10,16 @@ import { useUnistyles } from 'react-native-unistyles';
 import { findLanguageByCode, getLanguageDisplayName, LANGUAGES } from '@/constants/Languages';
 import { t } from '@/text';
 
+const PROVIDER_LABELS: Record<string, string> = {
+    elevenlabs: 'ElevenLabs',
+    openai: 'OpenAI GPT-4o',
+};
+
 export default function VoiceSettingsScreen() {
     const { theme } = useUnistyles();
     const router = useRouter();
     const [voiceAssistantLanguage] = useSettingMutable('voiceAssistantLanguage');
-    const [voiceBackend, setVoiceBackend] = useSettingMutable('voiceBackend');
+    const [voiceBackend] = useSettingMutable('voiceBackend');
     const [openaiKey, setOpenaiKey] = useSettingMutable('inferenceOpenAIKey');
     const [keyVisible, setKeyVisible] = useState(false);
 
@@ -23,22 +28,16 @@ export default function VoiceSettingsScreen() {
 
     return (
         <ItemList style={{ paddingTop: 0 }}>
-            {/* Voice Backend */}
+            {/* Voice Provider */}
             <ItemGroup
                 title={t('settingsVoice.backendTitle')}
                 footer={t('settingsVoice.backendDescription')}
             >
                 <Item
-                    title="ElevenLabs"
-                    subtitle={t('settingsVoice.backendElevenLabsSubtitle')}
-                    selected={voiceBackend === 'elevenlabs'}
-                    onPress={() => setVoiceBackend('elevenlabs')}
-                />
-                <Item
-                    title="OpenAI GPT-4o"
-                    subtitle={t('settingsVoice.backendOpenAISubtitle')}
-                    selected={voiceBackend === 'openai'}
-                    onPress={() => setVoiceBackend('openai')}
+                    title={t('settingsVoice.backendTitle')}
+                    icon={<Ionicons name="mic-outline" size={29} color="#007AFF" />}
+                    detail={PROVIDER_LABELS[voiceBackend] ?? voiceBackend}
+                    onPress={() => router.push('/settings/voice/provider')}
                 />
             </ItemGroup>
 

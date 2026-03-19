@@ -559,6 +559,13 @@ export const zhHans: TranslationStructure = {
 
     settingsVoice: {
         // Voice settings screen
+        backendTitle: '语音提供商',
+        backendDescription: '选择语音助手使用的语音服务。',
+        backendElevenLabsSubtitle: '默认提供商，无需 API 密钥',
+        backendOpenAISubtitle: '需要您自己的 OpenAI API 密钥',
+        apiKeyTitle: 'OpenAI API Key',
+        apiKeyDescription: '语音助手必需。输入您的 OpenAI API 密钥以启用语音功能。',
+        apiKeyPlaceholder: 'sk-...',
         languageTitle: '语言',
         languageDescription: '选择您希望语音助手交互使用的语言。此设置将在您的所有设备间同步。',
         preferredLanguage: '首选语言',

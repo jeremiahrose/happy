@@ -586,6 +586,13 @@ export const it: TranslationStructure = {
 
     settingsVoice: {
         // Voice settings screen
+        backendTitle: 'Provider vocale',
+        backendDescription: 'Scegli quale servizio vocale utilizzare per l\'assistente vocale.',
+        backendElevenLabsSubtitle: 'Provider predefinito, nessuna chiave API necessaria',
+        backendOpenAISubtitle: 'Richiede la tua chiave API OpenAI',
+        apiKeyTitle: 'OpenAI API Key',
+        apiKeyDescription: 'Necessaria per l\'assistente vocale. Inserisci la tua chiave API OpenAI per abilitare le funzionalità vocali.',
+        apiKeyPlaceholder: 'sk-...',
         languageTitle: 'Lingua',
         languageDescription: 'Scegli la tua lingua preferita per le interazioni dell\'assistente vocale. Questa impostazione si sincronizza su tutti i tuoi dispositivi.',
         preferredLanguage: 'Lingua preferita',

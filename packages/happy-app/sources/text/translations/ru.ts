@@ -567,6 +567,13 @@ export const ru: TranslationStructure = {
 
     settingsVoice: {
         // Voice settings screen
+        backendTitle: 'Голосовой провайдер',
+        backendDescription: 'Выберите голосовой сервис для голосового ассистента.',
+        backendElevenLabsSubtitle: 'Провайдер по умолчанию, API-ключ не нужен',
+        backendOpenAISubtitle: 'Требуется собственный API-ключ OpenAI',
+        apiKeyTitle: 'OpenAI API Key',
+        apiKeyDescription: 'Необходим для голосового ассистента. Введите ваш API-ключ OpenAI для включения голосовых функций.',
+        apiKeyPlaceholder: 'sk-...',
         languageTitle: 'Язык',
         languageDescription: 'Выберите предпочтительный язык для взаимодействия с голосовым помощником. Эта настройка синхронизируется на всех ваших устройствах.',
         preferredLanguage: 'Предпочтительный язык',
