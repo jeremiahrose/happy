@@ -1,0 +1,4 @@
+Starting Metro over Tailscale:
+REACT_NATIVE_PACKAGER_HOSTNAME=100.101.26.5 corepack yarn start --host lan
+
+gpt4o-voice-assistant
