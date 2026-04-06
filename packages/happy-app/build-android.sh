@@ -43,13 +43,10 @@ echo "APK built: $DIR/android/$APK"
 PIXEL_IP="${PIXEL_IP:?PIXEL_IP not set}"
 PIXEL_ADB_PORT="${PIXEL_ADB_PORT:-5555}"
 
-# Disconnect stale transports
-adb disconnect 2>/dev/null || true
-
 if adb connect "$PIXEL_IP:$PIXEL_ADB_PORT" 2>/dev/null | grep -q 'connected'; then
     echo "Installing via ADB ($PIXEL_IP:$PIXEL_ADB_PORT)..."
 else
-    echo "Could not connect to $PIXEL_IP:$PIXEL_ADB_PORT. Is ADB over network enabled?"
+    echo "Could not connect to $PIXEL_IP:$PIXEL_ADB_PORT. Has adb tcip 5555 been run?"
     echo "APK is at: $DIR/android/$APK"
     exit 0
 fi
