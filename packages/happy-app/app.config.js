@@ -88,6 +88,7 @@ export default {
         plugins: [
             require("./plugins/withEinkCompatibility.js"),
             require("./plugins/withForegroundService.js"),
+            require("./plugins/withVolumeKey.js"),
             [
                 "expo-router",
                 {
