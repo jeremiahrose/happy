@@ -17,6 +17,11 @@ const PROVIDER_LABELS: Record<string, string> = {
     openai: 'OpenAI GPT-4o',
 };
 
+const STT_PROVIDER_LABELS: Record<string, string> = {
+    openai: 'OpenAI Whisper',
+    deepgram: 'Deepgram Nova-3',
+};
+
 export default function VoiceSettingsScreen() {
     const { theme } = useUnistyles();
     const router = useRouter();
@@ -24,9 +29,12 @@ export default function VoiceSettingsScreen() {
     const [voiceBackend] = useSettingMutable('voiceBackend');
     const [openaiKey, setOpenaiKey] = useSettingMutable('inferenceOpenAIKey');
     const [pushToTalk, setPushToTalk] = useSettingMutable('voicePushToTalk');
+    const [voiceSttProvider] = useSettingMutable('voiceSttProvider');
+    const [deepgramKey, setDeepgramKey] = useSettingMutable('deepgramApiKey');
     const [voiceCustomAgentId, setVoiceCustomAgentId] = useSettingMutable('voiceCustomAgentId');
     const [voiceBypassToken, setVoiceBypassToken] = useSettingMutable('voiceBypassToken');
     const [keyVisible, setKeyVisible] = useState(false);
+    const [dgKeyVisible, setDgKeyVisible] = useState(false);
 
     // Find current language or default to first option
     const currentLanguage = findLanguageByCode(voiceAssistantLanguage) || LANGUAGES[0];
@@ -91,6 +99,55 @@ export default function VoiceSettingsScreen() {
                             size={22}
                             color={theme.colors.textSecondary}
                             onPress={() => setKeyVisible(!keyVisible)}
+                            style={{ marginLeft: 8, padding: 4 }}
+                        />
+                    </View>
+                </ItemGroup>
+            )}
+
+            {/* STT Provider - only shown when OpenAI backend is selected */}
+            {voiceBackend === 'openai' && (
+                <ItemGroup
+                    title={t('settingsVoice.sttProviderTitle')}
+                    footer={t('settingsVoice.sttProviderDescription')}
+                >
+                    <Item
+                        title={t('settingsVoice.sttProviderTitle')}
+                        icon={<Ionicons name="ear-outline" size={29} color="#007AFF" />}
+                        detail={STT_PROVIDER_LABELS[voiceSttProvider] ?? voiceSttProvider}
+                        onPress={() => router.push('/settings/voice/stt-provider')}
+                    />
+                </ItemGroup>
+            )}
+
+            {/* Deepgram API Key - only shown when Deepgram STT is selected */}
+            {voiceBackend === 'openai' && voiceSttProvider === 'deepgram' && (
+                <ItemGroup
+                    title={t('settingsVoice.deepgramApiKeyTitle')}
+                    footer={t('settingsVoice.deepgramApiKeyDescription')}
+                >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12 }}>
+                        <Ionicons name="key-outline" size={29} color="#007AFF" style={{ marginRight: 12 }} />
+                        <TextInput
+                            style={{
+                                flex: 1,
+                                fontSize: 16,
+                                color: theme.colors.text,
+                            }}
+                            placeholder={t('settingsVoice.deepgramApiKeyPlaceholder')}
+                            placeholderTextColor={theme.colors.input?.placeholder ?? '#999'}
+                            value={deepgramKey ?? ''}
+                            onChangeText={(text) => setDeepgramKey(text || null)}
+                            secureTextEntry={!dgKeyVisible}
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                            autoComplete="off"
+                        />
+                        <Ionicons
+                            name={dgKeyVisible ? 'eye-off-outline' : 'eye-outline'}
+                            size={22}
+                            color={theme.colors.textSecondary}
+                            onPress={() => setDgKeyVisible(!dgKeyVisible)}
                             style={{ marginLeft: 8, padding: 4 }}
                         />
                     </View>

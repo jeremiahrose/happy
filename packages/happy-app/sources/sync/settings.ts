@@ -32,6 +32,8 @@ export const SettingsSchema = z.object({
     voiceCustomAgentId: z.string().nullable().describe('Custom ElevenLabs agent ID (null to use Happy default)'),
     voiceBypassToken: z.boolean().describe('Bypass Happy server token and connect directly to ElevenLabs (requires custom agent ID)'),
     voiceBackend: z.enum(['elevenlabs', 'openai']).describe('Voice assistant backend provider'),
+    voiceSttProvider: z.enum(['openai', 'deepgram']).describe('Speech-to-text provider for OpenAI voice backend'),
+    deepgramApiKey: z.string().nullable().describe('Deepgram API key for speech-to-text'),
     voicePushToTalk: z.boolean().describe('Use push-to-talk instead of always-on mic for OpenAI voice'),
     preferredLanguage: z.string().nullable().describe('Preferred UI language (null for auto-detect from device locale)'),
     recentMachinePaths: z.array(z.object({
@@ -100,6 +102,8 @@ export const settingsDefaults: Settings = {
     voiceCustomAgentId: null,
     voiceBypassToken: false,
     voiceBackend: 'elevenlabs',
+    voiceSttProvider: 'openai',
+    deepgramApiKey: null,
     voicePushToTalk: true,
     preferredLanguage: null,
     recentMachinePaths: [],

@@ -25,6 +25,9 @@ import type { VoiceSession, VoiceSessionConfig } from './types';
  */
 
 let ws: WebSocket | null = null;
+let dgWs: WebSocket | null = null;
+let activeSttProvider: 'openai' | 'deepgram' = 'openai';
+let storedDeepgramApiKey: string | null = null;
 let playbackContext: AudioContext | null = null;
 let nextPlayTime = 0;
 let mediaStream: MediaStream | null = null;
@@ -87,8 +90,8 @@ function playPcm16Bytes(bytes: Uint8Array) {
 // Permission pattern matching
 //
 
-const ALLOW_PATTERNS = /^(yes|yeah|yep|approve|approved|allow|go ahead|do it|ok|okay|sure|go for it)$/i;
-const DENY_PATTERNS = /^(no|nope|deny|reject|stop|cancel|don't|do not)$/i;
+const ALLOW_PATTERNS = /^(yes|yeah|yep|approve|approved|allow|go ahead|do it|ok|okay|sure|go for it)[.!,]?$/i;
+const DENY_PATTERNS = /^(no|nope|deny|reject|stop|cancel|don't|do not)[.!,]?$/i;
 
 function tryHandlePermission(transcript: string): boolean {
     const sessionId = getCurrentRealtimeSessionId();
@@ -232,13 +235,17 @@ async function startRecording() {
         workletNode.port.onmessage = (event) => {
             if (event.data.pcm16) {
                 audioChunkCount++;
-                const bytes = new Uint8Array(event.data.pcm16.buffer);
-                let binary = '';
-                for (let i = 0; i < bytes.length; i++) {
-                    binary += String.fromCharCode(bytes[i]);
+                if (activeSttProvider === 'deepgram' && dgWs && dgWs.readyState === WebSocket.OPEN) {
+                    dgWs.send(event.data.pcm16.buffer);
+                } else {
+                    const bytes = new Uint8Array(event.data.pcm16.buffer);
+                    let binary = '';
+                    for (let i = 0; i < bytes.length; i++) {
+                        binary += String.fromCharCode(bytes[i]);
+                    }
+                    const base64 = btoa(binary);
+                    sendWsMessage({ type: 'input_audio_buffer.append', audio: base64 });
                 }
-                const base64 = btoa(binary);
-                sendWsMessage({ type: 'input_audio_buffer.append', audio: base64 });
             }
         };
 
@@ -264,13 +271,114 @@ function stopRecording() {
 }
 
 //
+// Deepgram STT
+//
+
+function connectDeepgram(apiKey: string, language?: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+        const params = new URLSearchParams({
+            model: 'nova-3',
+            encoding: 'linear16',
+            sample_rate: String(OPENAI_SAMPLE_RATE),
+            channels: '1',
+            smart_format: 'true',
+            punctuate: 'true',
+            // Web WebSocket doesn't support custom headers, use token param
+            token: apiKey,
+        });
+        if (!pushToTalkMode) {
+            params.set('endpointing', '700');
+            params.set('interim_results', 'true');
+            params.set('vad_events', 'true');
+        }
+        if (language) {
+            params.set('language', language);
+        }
+
+        const url = `wss://api.deepgram.com/v1/listen?${params.toString()}`;
+        dgWs = new WebSocket(url);
+
+        let settled = false;
+
+        const timeout = setTimeout(() => {
+            if (!settled) {
+                settled = true;
+                if (dgWs) { dgWs.close(); dgWs = null; }
+                reject(new Error('Deepgram connection timeout'));
+            }
+        }, 10000);
+
+        dgWs.onopen = () => {
+            if (!settled) {
+                settled = true;
+                clearTimeout(timeout);
+                console.log('[Voice] Deepgram connected');
+                resolve();
+            }
+        };
+
+        dgWs.onmessage = (event: MessageEvent) => {
+            try {
+                const data = JSON.parse(event.data);
+
+                if (data.type === 'Results') {
+                    const alt = data.channel?.alternatives?.[0];
+                    const transcript = alt?.transcript?.trim();
+
+                    if (data.speech_final && transcript) {
+                        console.log('[Voice] Deepgram transcript:', transcript);
+                        storage.getState().setRealtimeMode('idle');
+
+                        if (tryHandlePermission(transcript)) return;
+
+                        const sessionId = getCurrentRealtimeSessionId();
+                        if (sessionId) {
+                            sync.sendMessage(sessionId, transcript, undefined, voicePrompt);
+                        }
+                    }
+                }
+
+                if (data.type === 'SpeechStarted') {
+                    console.log('[Voice] Deepgram speech detected');
+                    cancelTts();
+                }
+            } catch (e) {
+                console.error('[Voice] Deepgram message parse error:', e);
+            }
+        };
+
+        dgWs.onerror = (error) => {
+            console.error('[Voice] Deepgram error:', error);
+            if (!settled) {
+                settled = true;
+                clearTimeout(timeout);
+                reject(error);
+            }
+        };
+
+        dgWs.onclose = () => {
+            console.log('[Voice] Deepgram closed');
+            dgWs = null;
+        };
+    });
+}
+
+function closeDeepgram() {
+    if (dgWs) {
+        try { dgWs.send(new ArrayBuffer(0)); } catch {}
+        dgWs.close();
+        dgWs = null;
+    }
+}
+
+//
 // Voice session implementation
 //
 
 class RealtimeVoiceSessionImpl implements VoiceSession {
 
     async startSession(config: VoiceSessionConfig): Promise<void> {
-        if (ws) {
+        if (ws || dgWs) {
             console.warn('[Voice] Session already active');
             return;
         }
@@ -278,6 +386,9 @@ class RealtimeVoiceSessionImpl implements VoiceSession {
         try {
             storage.getState().setRealtimeStatus('connecting');
             storedApiKey = config.apiKey ?? null;
+            activeSttProvider = config.sttProvider ?? 'openai';
+            storedDeepgramApiKey = config.deepgramApiKey ?? null;
+            pushToTalkMode = config.pushToTalk ?? false;
 
             // Request microphone permission
             try {
@@ -291,148 +402,174 @@ class RealtimeVoiceSessionImpl implements VoiceSession {
             playbackContext = new AudioContext({ sampleRate: OPENAI_SAMPLE_RATE });
             nextPlayTime = 0;
 
-            pushToTalkMode = config.pushToTalk ?? false;
-
-            const url = `wss://api.openai.com/v1/realtime?intent=transcription`;
-            ws = new WebSocket(url, [
-                'realtime',
-                `openai-insecure-api-key.${config.apiKey}`,
-                'openai-beta.realtime-v1',
-            ]);
-
-            await new Promise<void>((resolve, reject) => {
-                if (!ws) return reject(new Error('WebSocket not created'));
-
-                let settled = false;
-
-                const timeout = setTimeout(() => {
-                    if (!settled) {
-                        settled = true;
-                        storage.getState().setRealtimeStatus('error');
-                        Modal.alert(
-                            t('common.error'),
-                            'Could not connect to OpenAI voice service. Please check that your OpenAI account has sufficient credits at platform.openai.com.',
-                        );
-                        if (ws) {
-                            ws.close();
-                            ws = null;
-                        }
-                        reject(new Error('Connection timeout'));
-                    }
-                }, 10000);
-
-                ws.onmessage = (event: MessageEvent) => {
-                    const data = JSON.parse(event.data);
-
-                    if (data.type === 'error') {
-                        if (!settled) {
-                            settled = true;
-                            clearTimeout(timeout);
-                            console.error('[Voice] API error during setup:', JSON.stringify(data.error));
-                            const message = humanizeOpenAIError(data.error);
-                            storage.getState().setRealtimeStatus('error');
-                            Modal.alert(t('common.error'), message);
-                            reject(new Error(message));
-                        } else {
-                            console.error('[Voice] API error:', JSON.stringify(data.error));
-                        }
-                        return;
-                    }
-
-                    if (data.type === 'transcription_session.created' || data.type === 'session.created') {
-                        // Send transcription session config
-                        sendWsMessage({
-                            type: 'transcription_session.update',
-                            session: {
-                                input_audio_format: OPENAI_AUDIO_FORMAT,
-                                input_audio_transcription: {
-                                    model: OPENAI_TRANSCRIPTION_MODEL,
-                                },
-                                turn_detection: pushToTalkMode ? null : {
-                                    type: 'server_vad',
-                                    threshold: 0.7,
-                                    prefix_padding_ms: 300,
-                                    silence_duration_ms: 700,
-                                },
-                            },
-                        });
-                    }
-
-                    if (data.type === 'transcription_session.updated' || data.type === 'session.updated') {
-                        if (!settled) {
-                            settled = true;
-                            clearTimeout(timeout);
-                            console.log('[Voice] Transcription session configured');
-                            resolve();
-                            if (!pushToTalkMode) {
-                                startRecording();
-                            }
-                            storage.getState().setRealtimeStatus('connected');
-                            storage.getState().setRealtimeMode('idle');
-                        }
-                    }
-
-                    if (data.type === 'conversation.item.input_audio_transcription.completed') {
-                        const transcript = data.transcript?.trim();
-                        if (!transcript) return;
-
-                        console.log('[Voice] Transcription:', transcript);
-                        storage.getState().setRealtimeMode('idle');
-
-                        if (tryHandlePermission(transcript)) return;
-
-                        const sessionId = getCurrentRealtimeSessionId();
-                        if (sessionId) {
-                            sync.sendMessage(sessionId, transcript, undefined, voicePrompt);
-                        }
-                    }
-
-                    if (data.type === 'input_audio_buffer.speech_started') {
-                        console.log('[Voice] Speech detected');
-                        cancelTts();
-                    }
-
-                    if (data.type === 'input_audio_buffer.speech_stopped') {
-                        console.log('[Voice] Speech ended');
-                    }
-                };
-
-                ws.onerror = (error) => {
-                    if (settled) return;
-                    settled = true;
-                    clearTimeout(timeout);
-                    console.error('[Voice] WebSocket error:', error);
-                    storage.getState().setRealtimeStatus('error');
-                    Modal.alert(
-                        t('common.error'),
-                        'Could not connect to OpenAI voice service. Please check that your OpenAI account has sufficient credits at platform.openai.com.',
-                    );
-                    reject(error);
-                };
-
-                ws.onclose = () => {
-                    console.log('[Voice] WebSocket closed');
-                    stopRecording();
-                    cancelTts();
-                    storage.getState().setRealtimeStatus('disconnected');
-                    storage.getState().setRealtimeMode('idle', true);
-                    storage.getState().clearRealtimeModeDebounce();
-                    ws = null;
-                };
-            });
+            if (activeSttProvider === 'deepgram') {
+                await this.startDeepgramSession(config);
+            } else {
+                await this.startOpenAISession(config);
+            }
         } catch (error) {
             console.error('[Voice] Failed to start session:', error);
             storage.getState().setRealtimeStatus('error');
-            if (ws) {
-                ws.close();
+            closeDeepgram();
+            const openWs = ws as WebSocket | null;
+            if (openWs) {
+                openWs.close();
                 ws = null;
             }
         }
     }
 
+    private async startDeepgramSession(config: VoiceSessionConfig): Promise<void> {
+        if (!storedDeepgramApiKey) {
+            Modal.alert(t('common.error'), 'Deepgram API key not configured. Add your key in Settings > Voice.');
+            storage.getState().setRealtimeStatus('error');
+            return;
+        }
+
+        const language = storage.getState().settings.voiceAssistantLanguage ?? undefined;
+        await connectDeepgram(storedDeepgramApiKey, language);
+
+        if (!pushToTalkMode) {
+            await startRecording();
+        }
+        storage.getState().setRealtimeStatus('connected');
+        storage.getState().setRealtimeMode('idle');
+    }
+
+    private async startOpenAISession(config: VoiceSessionConfig): Promise<void> {
+        const url = `wss://api.openai.com/v1/realtime?intent=transcription`;
+        ws = new WebSocket(url, [
+            'realtime',
+            `openai-insecure-api-key.${config.apiKey}`,
+            'openai-beta.realtime-v1',
+        ]);
+
+        await new Promise<void>((resolve, reject) => {
+            if (!ws) return reject(new Error('WebSocket not created'));
+
+            let settled = false;
+
+            const timeout = setTimeout(() => {
+                if (!settled) {
+                    settled = true;
+                    storage.getState().setRealtimeStatus('error');
+                    Modal.alert(
+                        t('common.error'),
+                        'Could not connect to OpenAI voice service. Please check that your OpenAI account has sufficient credits at platform.openai.com.',
+                    );
+                    if (ws) {
+                        ws.close();
+                        ws = null;
+                    }
+                    reject(new Error('Connection timeout'));
+                }
+            }, 10000);
+
+            ws.onmessage = (event: MessageEvent) => {
+                const data = JSON.parse(event.data);
+
+                if (data.type === 'error') {
+                    if (!settled) {
+                        settled = true;
+                        clearTimeout(timeout);
+                        console.error('[Voice] API error during setup:', JSON.stringify(data.error));
+                        const message = humanizeOpenAIError(data.error);
+                        storage.getState().setRealtimeStatus('error');
+                        Modal.alert(t('common.error'), message);
+                        reject(new Error(message));
+                    } else {
+                        console.error('[Voice] API error:', JSON.stringify(data.error));
+                    }
+                    return;
+                }
+
+                if (data.type === 'transcription_session.created' || data.type === 'session.created') {
+                    // Send transcription session config
+                    sendWsMessage({
+                        type: 'transcription_session.update',
+                        session: {
+                            input_audio_format: OPENAI_AUDIO_FORMAT,
+                            input_audio_transcription: {
+                                model: OPENAI_TRANSCRIPTION_MODEL,
+                            },
+                            turn_detection: pushToTalkMode ? null : {
+                                type: 'server_vad',
+                                threshold: 0.7,
+                                prefix_padding_ms: 300,
+                                silence_duration_ms: 700,
+                            },
+                        },
+                    });
+                }
+
+                if (data.type === 'transcription_session.updated' || data.type === 'session.updated') {
+                    if (!settled) {
+                        settled = true;
+                        clearTimeout(timeout);
+                        console.log('[Voice] Transcription session configured');
+                        resolve();
+                        if (!pushToTalkMode) {
+                            startRecording();
+                        }
+                        storage.getState().setRealtimeStatus('connected');
+                        storage.getState().setRealtimeMode('idle');
+                    }
+                }
+
+                if (data.type === 'conversation.item.input_audio_transcription.completed') {
+                    const transcript = data.transcript?.trim();
+                    if (!transcript) return;
+
+                    console.log('[Voice] Transcription:', transcript);
+                    storage.getState().setRealtimeMode('idle');
+
+                    if (tryHandlePermission(transcript)) return;
+
+                    const sessionId = getCurrentRealtimeSessionId();
+                    if (sessionId) {
+                        sync.sendMessage(sessionId, transcript, undefined, voicePrompt);
+                    }
+                }
+
+                if (data.type === 'input_audio_buffer.speech_started') {
+                    console.log('[Voice] Speech detected');
+                    cancelTts();
+                }
+
+                if (data.type === 'input_audio_buffer.speech_stopped') {
+                    console.log('[Voice] Speech ended');
+                }
+            };
+
+            ws.onerror = (error) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timeout);
+                console.error('[Voice] WebSocket error:', error);
+                storage.getState().setRealtimeStatus('error');
+                Modal.alert(
+                    t('common.error'),
+                    'Could not connect to OpenAI voice service. Please check that your OpenAI account has sufficient credits at platform.openai.com.',
+                );
+                reject(error);
+            };
+
+            ws.onclose = () => {
+                console.log('[Voice] WebSocket closed');
+                stopRecording();
+                cancelTts();
+                storage.getState().setRealtimeStatus('disconnected');
+                storage.getState().setRealtimeMode('idle', true);
+                storage.getState().clearRealtimeModeDebounce();
+                ws = null;
+            };
+        });
+    }
+
     async endSession(): Promise<void> {
         stopRecording();
         cancelTts();
+        closeDeepgram();
         if (ws) {
             ws.close();
             ws = null;
@@ -442,23 +579,36 @@ class RealtimeVoiceSessionImpl implements VoiceSession {
             playbackContext = null;
         }
         storedApiKey = null;
+        storedDeepgramApiKey = null;
         storage.getState().setRealtimeStatus('disconnected');
     }
 
     startTalking(): void {
-        if (!pushToTalkMode || !ws || ws.readyState !== WebSocket.OPEN) return;
+        if (!pushToTalkMode) return;
+        if (activeSttProvider === 'deepgram') {
+            if (!dgWs || dgWs.readyState !== WebSocket.OPEN) return;
+        } else {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+        }
         cancelTts();
         startRecording();
     }
 
     stopTalking(): void {
-        if (!pushToTalkMode || !ws || ws.readyState !== WebSocket.OPEN) return;
+        if (!pushToTalkMode) return;
         stopRecording();
-        if (audioChunkCount < 5) {
-            sendWsMessage({ type: 'input_audio_buffer.clear' });
-            return;
+        if (activeSttProvider === 'deepgram') {
+            if (!dgWs || dgWs.readyState !== WebSocket.OPEN) return;
+            if (audioChunkCount < 5) return;
+            try { dgWs.send(new ArrayBuffer(0)); } catch {}
+        } else {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            if (audioChunkCount < 5) {
+                sendWsMessage({ type: 'input_audio_buffer.clear' });
+                return;
+            }
+            sendWsMessage({ type: 'input_audio_buffer.commit' });
         }
-        sendWsMessage({ type: 'input_audio_buffer.commit' });
     }
 
     sendTextMessage(message: string): void {
@@ -471,6 +621,9 @@ class RealtimeVoiceSessionImpl implements VoiceSession {
     }
 
     sendContextualUpdate(update: string): void {
+        // Deepgram doesn't support mid-session config updates
+        if (activeSttProvider === 'deepgram') return;
+
         if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
         // Truncate to stay under 1024 character limit

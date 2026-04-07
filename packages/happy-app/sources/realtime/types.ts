@@ -4,6 +4,8 @@ export interface VoiceSessionConfig {
     pushToTalk?: boolean;
     // OpenAI backend
     apiKey?: string;
+    sttProvider?: 'openai' | 'deepgram';
+    deepgramApiKey?: string;
     // ElevenLabs backend
     token?: string;
     agentId?: string;

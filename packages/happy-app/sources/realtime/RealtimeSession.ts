@@ -80,7 +80,7 @@ async function startOpenAISession(sessionId: string, initialContext?: string) {
         return;
     }
 
-    const pushToTalk = storage.getState().settings.voicePushToTalk;
+    const { voicePushToTalk: pushToTalk, voiceSttProvider, deepgramApiKey } = storage.getState().settings;
 
     currentSessionId = sessionId;
     voiceSessionStarted = true;
@@ -89,6 +89,8 @@ async function startOpenAISession(sessionId: string, initialContext?: string) {
         initialContext,
         apiKey,
         pushToTalk,
+        sttProvider: voiceSttProvider,
+        deepgramApiKey: deepgramApiKey ?? undefined,
     });
 }
 
