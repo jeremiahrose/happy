@@ -161,17 +161,19 @@ const withVolumeKey = (config) => {
                 const importLine = `import ${packageName}.volumekey.VolumeKeyPackage`;
                 const addLine = `packages.add(VolumeKeyPackage())`;
 
-                if (!mainApp.includes('VolumeKeyPackage')) {
+                if (!mainApp.includes(importLine)) {
                     mainApp = mainApp.replace(
                         /(import [^\n]+\n)(?!import)/,
                         `$1${importLine}\n`
                     );
-                    mainApp = mainApp.replace(
-                        /(val packages = PackageList\(this\)\.packages)/,
-                        `$1\n            ${addLine}`
-                    );
-                    fs.writeFileSync(mainAppPath, mainApp, 'utf8');
                 }
+                if (!mainApp.includes('add(VolumeKeyPackage())')) {
+                    mainApp = mainApp.replace(
+                        /(PackageList\(this\)\.packages\.apply\s*\{)/,
+                        `$1\n              add(VolumeKeyPackage())`
+                    );
+                }
+                fs.writeFileSync(mainAppPath, mainApp, 'utf8');
             }
 
             console.log('✅ Volume key plugin: native files copied');

@@ -129,21 +129,19 @@ const withForegroundService = (config) => {
                 const importLine = `import ${packageName}.foregroundservice.VoiceForegroundServicePackage`;
                 const addLine = `packages.add(VoiceForegroundServicePackage())`;
 
-                if (!mainApp.includes('VoiceForegroundServicePackage')) {
-                    // Add import after the last import statement
+                if (!mainApp.includes(importLine)) {
                     mainApp = mainApp.replace(
                         /(import [^\n]+\n)(?!import)/,
                         `$1${importLine}\n`
                     );
-
-                    // Add package registration in getPackages()
-                    mainApp = mainApp.replace(
-                        /(val packages = PackageList\(this\)\.packages)/,
-                        `$1\n            ${addLine}`
-                    );
-
-                    fs.writeFileSync(mainAppPath, mainApp, 'utf8');
                 }
+                if (!mainApp.includes('add(VoiceForegroundServicePackage())')) {
+                    mainApp = mainApp.replace(
+                        /(PackageList\(this\)\.packages\.apply\s*\{)/,
+                        `$1\n              add(VoiceForegroundServicePackage())`
+                    );
+                }
+                fs.writeFileSync(mainAppPath, mainApp, 'utf8');
             }
 
             console.log('✅ Foreground service plugin: native files copied');
