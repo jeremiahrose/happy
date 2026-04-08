@@ -7,7 +7,7 @@ import { TokenStorage } from '@/auth/tokenStorage';
 import { t } from '@/text';
 import { requestMicrophonePermission, showMicrophonePermissionDeniedAlert } from '@/utils/microphonePermissions';
 import { config } from '@/config';
-import { startVolumeKeyPTT, stopVolumeKeyPTT } from './volumeKeyPTT';
+import { startMediaButtonPTT, stopMediaButtonPTT } from './mediaButtonPTT';
 import { Platform } from 'react-native';
 
 let voiceSession: VoiceSession | null = null;
@@ -94,7 +94,7 @@ async function startOpenAISession(sessionId: string, initialContext?: string) {
     });
 
     if (pushToTalk && Platform.OS === 'android') {
-        startVolumeKeyPTT().catch(e => console.warn('[Voice] Volume key PTT setup failed:', e));
+        startMediaButtonPTT();
     }
 }
 
@@ -145,7 +145,7 @@ export async function stopRealtimeSession() {
     } finally {
         currentSessionId = null;
         voiceSessionStarted = false;
-        stopVolumeKeyPTT().catch(e => console.warn('[Voice] Volume key PTT cleanup failed:', e));
+        stopMediaButtonPTT();
     }
 }
 

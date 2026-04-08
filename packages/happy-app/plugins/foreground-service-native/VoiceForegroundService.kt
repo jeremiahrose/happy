@@ -7,17 +7,24 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.PowerManager
+import android.support.v4.media.session.MediaSessionCompat
+import android.support.v4.media.session.PlaybackStateCompat
+import android.util.Log
+import android.view.KeyEvent
 import com.facebook.react.HeadlessJsTaskService
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.jstasks.HeadlessJsTaskConfig
+import com.facebook.react.modules.core.DeviceEventManagerModule
 
 class VoiceForegroundService : HeadlessJsTaskService() {
 
     private var wakeLock: PowerManager.WakeLock? = null
+    private var mediaSession: MediaSessionCompat? = null
 
     companion object {
         const val CHANNEL_ID = "voice_assistant_channel"
         const val NOTIFICATION_ID = 1001
+        private const val TAG = "VoiceForegroundService"
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -31,6 +38,7 @@ class VoiceForegroundService : HeadlessJsTaskService() {
         }
 
         acquireWakeLock()
+        setupMediaSession()
 
         // Start the headless JS task to keep the JS thread alive
         super.onStartCommand(intent, flags, startId)
@@ -48,8 +56,70 @@ class VoiceForegroundService : HeadlessJsTaskService() {
     }
 
     override fun onDestroy() {
+        releaseMediaSession()
         releaseWakeLock()
         super.onDestroy()
+    }
+
+    private fun setupMediaSession() {
+        mediaSession = MediaSessionCompat(this, "HappyVoice").apply {
+            setCallback(object : MediaSessionCompat.Callback() {
+                override fun onMediaButtonEvent(mediaButtonEvent: Intent?): Boolean {
+                    val event = mediaButtonEvent?.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT)
+                    if (event != null) {
+                        val actionStr = when (event.action) {
+                            KeyEvent.ACTION_DOWN -> "DOWN"
+                            KeyEvent.ACTION_UP -> "UP"
+                            else -> "ACTION_${event.action}"
+                        }
+                        val keyCodeStr = KeyEvent.keyCodeToString(event.keyCode)
+                        Log.d(TAG, "MediaButton: keyCode=$keyCodeStr action=$actionStr repeat=${event.repeatCount}")
+
+                        // Emit to JS for debugging
+                        try {
+                            val context = reactContext
+                            if (context != null) {
+                                val params = Arguments.createMap().apply {
+                                    putInt("keyCode", event.keyCode)
+                                    putString("keyCodeName", keyCodeStr)
+                                    putString("action", actionStr)
+                                    putInt("repeatCount", event.repeatCount)
+                                }
+                                context
+                                    .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+                                    .emit("mediaButtonEvent", params)
+                            }
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Failed to emit media button event to JS", e)
+                        }
+                    }
+                    return true // consume the event
+                }
+            })
+
+            // Set playback state to playing so the system routes media buttons to us
+            val playbackState = PlaybackStateCompat.Builder()
+                .setState(PlaybackStateCompat.STATE_PLAYING, 0, 1f)
+                .setActions(
+                    PlaybackStateCompat.ACTION_PLAY_PAUSE or
+                    PlaybackStateCompat.ACTION_PLAY or
+                    PlaybackStateCompat.ACTION_PAUSE or
+                    PlaybackStateCompat.ACTION_STOP
+                )
+                .build()
+            setPlaybackState(playbackState)
+
+            isActive = true
+        }
+        Log.d(TAG, "MediaSession initialized")
+    }
+
+    private fun releaseMediaSession() {
+        mediaSession?.let {
+            it.isActive = false
+            it.release()
+        }
+        mediaSession = null
     }
 
     private fun createNotificationChannel() {

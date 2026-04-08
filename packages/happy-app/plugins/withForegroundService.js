@@ -145,6 +145,25 @@ const withForegroundService = (config) => {
                 fs.writeFileSync(mainAppPath, mainApp, 'utf8');
             }
 
+            // Add androidx.media dependency to build.gradle for MediaSessionCompat
+            const buildGradlePath = path.join(
+                projectRoot,
+                'android',
+                'app',
+                'build.gradle'
+            );
+            if (fs.existsSync(buildGradlePath)) {
+                let buildGradle = fs.readFileSync(buildGradlePath, 'utf8');
+                const mediaDep = 'implementation("androidx.media:media:1.7.0")';
+                if (!buildGradle.includes('androidx.media:media')) {
+                    buildGradle = buildGradle.replace(
+                        /dependencies\s*\{/,
+                        `dependencies {\n    ${mediaDep}`
+                    );
+                    fs.writeFileSync(buildGradlePath, buildGradle, 'utf8');
+                }
+            }
+
             console.log('✅ Foreground service plugin: native files copied');
             return dangerousConfig;
         },
