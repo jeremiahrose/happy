@@ -23,6 +23,7 @@ const withForegroundService = (config) => {
         const requiredPermissions = [
             'android.permission.FOREGROUND_SERVICE',
             'android.permission.FOREGROUND_SERVICE_MICROPHONE',
+            'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK',
             'android.permission.WAKE_LOCK',
         ];
 
@@ -52,7 +53,7 @@ const withForegroundService = (config) => {
                 application.service.push({
                     $: {
                         'android:name': serviceName,
-                        'android:foregroundServiceType': 'microphone',
+                        'android:foregroundServiceType': 'microphone|mediaPlayback',
                         'android:exported': 'false',
                     },
                 });
