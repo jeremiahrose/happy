@@ -6,6 +6,7 @@ import { StatusDot } from './StatusDot';
 import { Typography } from '@/constants/Typography';
 import { Ionicons } from '@expo/vector-icons';
 import { stopRealtimeSession, startTalking, stopTalking, isPushToTalkEnabled } from '@/realtime/RealtimeSession';
+import { addMediaButtonPTTListener } from '@/realtime/mediaButtonPTT';
 import { useUnistyles } from 'react-native-unistyles';
 import { VoiceBars } from './VoiceBars';
 import { t } from '@/text';
@@ -22,6 +23,12 @@ export const VoiceAssistantStatusBar = React.memo(({ variant = 'full', style }: 
     const voiceBackend = useSetting('voiceBackend');
     const voicePushToTalk = useSetting('voicePushToTalk');
     const [isTalking, setIsTalking] = React.useState(false);
+
+    // Sync talking state from media button (headphone) PTT
+    React.useEffect(() => {
+        const remove = addMediaButtonPTTListener(setIsTalking);
+        return remove;
+    }, []);
 
     const pushToTalk = voiceBackend === 'openai' && voicePushToTalk;
 
