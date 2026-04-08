@@ -3,14 +3,15 @@ package __PACKAGE__.foregroundservice
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
-import android.os.IBinder
 import android.os.PowerManager
+import com.facebook.react.HeadlessJsTaskService
+import com.facebook.react.bridge.Arguments
+import com.facebook.react.jstasks.HeadlessJsTaskConfig
 
-class VoiceForegroundService : Service() {
+class VoiceForegroundService : HeadlessJsTaskService() {
 
     private var wakeLock: PowerManager.WakeLock? = null
 
@@ -19,12 +20,8 @@ class VoiceForegroundService : Service() {
         const val NOTIFICATION_ID = 1001
     }
 
-    override fun onCreate() {
-        super.onCreate()
-        createNotificationChannel()
-    }
-
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        createNotificationChannel()
         val notification = buildNotification()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -35,10 +32,20 @@ class VoiceForegroundService : Service() {
 
         acquireWakeLock()
 
+        // Start the headless JS task to keep the JS thread alive
+        super.onStartCommand(intent, flags, startId)
+
         return START_STICKY
     }
 
-    override fun onBind(intent: Intent?): IBinder? = null
+    override fun getTaskConfig(intent: Intent?): HeadlessJsTaskConfig {
+        return HeadlessJsTaskConfig(
+            "VoiceKeepAlive",
+            Arguments.createMap(),
+            0, // no timeout — long-running task
+            true // allow in foreground
+        )
+    }
 
     override fun onDestroy() {
         releaseWakeLock()

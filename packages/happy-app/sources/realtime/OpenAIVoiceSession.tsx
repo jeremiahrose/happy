@@ -356,6 +356,10 @@ class RealtimeVoiceSessionImpl implements VoiceSession {
             playbackContext = new RNAudioContext({ sampleRate: OPENAI_SAMPLE_RATE });
             nextPlayTime = 0;
 
+            // Keep audio session active when app is backgrounded/screen off
+            AudioManager.setAudioSessionActivity(true);
+            AudioManager.setLockScreenInfo({ title: 'Happy', description: 'Voice session active', state: 'state_playing' });
+
             // Get ephemeral token for transcription session
             const tokenResponse = await fetch('https://api.openai.com/v1/realtime/transcription_sessions', {
                 method: 'POST',
@@ -535,6 +539,9 @@ class RealtimeVoiceSessionImpl implements VoiceSession {
             ws.close();
             ws = null;
         }
+        // Release background audio session
+        AudioManager.setAudioSessionActivity(false);
+        AudioManager.resetLockScreenInfo();
         if (playbackContext) {
             playbackContext.close();
             playbackContext = null;
