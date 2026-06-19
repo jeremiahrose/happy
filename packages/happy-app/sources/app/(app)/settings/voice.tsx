@@ -15,6 +15,7 @@ import { Modal } from '@/modal';
 const PROVIDER_LABELS: Record<string, string> = {
     elevenlabs: 'ElevenLabs',
     openai: 'OpenAI GPT-4o',
+    local: 'Local (On-Device)',
 };
 
 export default function VoiceSettingsScreen() {
@@ -97,8 +98,8 @@ export default function VoiceSettingsScreen() {
                 </ItemGroup>
             )}
 
-            {/* Push-to-Talk - only shown when OpenAI backend is selected */}
-            {voiceBackend === 'openai' && (
+            {/* Push-to-Talk - shown for OpenAI and Local backends */}
+            {(voiceBackend === 'openai' || voiceBackend === 'local') && (
                 <ItemGroup
                     title={t('settingsVoice.pushToTalkTitle')}
                     footer={t('settingsVoice.pushToTalkDescription')}

@@ -18,6 +18,11 @@ const PROVIDERS = [
         title: 'OpenAI GPT-4o',
         subtitle: () => t('settingsVoice.backendOpenAISubtitle'),
     },
+    {
+        key: 'local' as const,
+        title: 'Local (On-Device)',
+        subtitle: () => 'On-device STT with Parakeet CTC, OpenAI TTS',
+    },
 ];
 
 export default function VoiceProviderScreen() {

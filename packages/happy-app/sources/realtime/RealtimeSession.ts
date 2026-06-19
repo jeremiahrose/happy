@@ -70,6 +70,26 @@ async function startElevenLabsSession(sessionId: string, initialContext?: string
     });
 }
 
+async function startLocalSession(sessionId: string, initialContext?: string) {
+    if (!voiceSession) return;
+
+    const apiKey = storage.getState().settings.inferenceOpenAIKey;
+    const pushToTalk = storage.getState().settings.voicePushToTalk;
+
+    currentSessionId = sessionId;
+    voiceSessionStarted = true;
+    await voiceSession.startSession({
+        sessionId,
+        initialContext,
+        apiKey: apiKey ?? undefined,
+        pushToTalk,
+    });
+
+    if (pushToTalk && Platform.OS === 'android') {
+        startMediaButtonPTT();
+    }
+}
+
 async function startOpenAISession(sessionId: string, initialContext?: string) {
     if (!voiceSession) return;
 
@@ -119,7 +139,9 @@ export async function startRealtimeSession(sessionId: string, initialContext?: s
     const voiceBackend = storage.getState().settings.voiceBackend;
 
     try {
-        if (voiceBackend === 'openai') {
+        if (voiceBackend === 'local') {
+            await startLocalSession(sessionId, initialContext);
+        } else if (voiceBackend === 'openai') {
             await startOpenAISession(sessionId, initialContext);
         } else {
             await startElevenLabsSession(sessionId, initialContext);
@@ -182,5 +204,5 @@ export function stopTalking(): void {
 
 export function isPushToTalkEnabled(): boolean {
     const settings = storage.getState().settings;
-    return settings.voiceBackend === 'openai' && settings.voicePushToTalk;
+    return (settings.voiceBackend === 'openai' || settings.voiceBackend === 'local') && settings.voicePushToTalk;
 }
